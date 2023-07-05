@@ -50,6 +50,7 @@ class Log {
     this.signer = signer
     this.id = id || nanoid()
   }
+
   async rec(array = false) {
     let res = {},
       err,
@@ -223,7 +224,7 @@ export const connectLocalhost = async ({ val: { port } }) => {
 }
 
 export const setupWeaveDB = async ({
-  val: { network, contractTxId, port, rpc, temp = false },
+  val: { network, contractTxId, port, rpc, temp = false, dre },
 }) => {
   let _sdk
   let isRPC = !isNil(rpc) && !/^\s*$/.test(rpc)
@@ -238,6 +239,7 @@ export const setupWeaveDB = async ({
     }
   } else {
     _sdk = new SDK({
+      remoteStateSyncSource: dre,
       network: network.toLowerCase(),
       port,
       contractTxId,
@@ -1029,6 +1031,36 @@ export const addRelayerJob = async ({
       await new Log(sdk, "addRelayerJob", [name, job], opt, fn, signer).rec(
         true
       )
+    )
+  } catch (e) {
+    console.log(e)
+    return `Error: Something went wrong`
+  }
+}
+
+export const addTrigger = async ({
+  val: { name, on, contractTxId, func, col_path },
+  fn,
+}) => {
+  try {
+    const { err, opt, signer } = await fn(getOpt)({
+      contractTxId,
+    })
+    if (!isNil(err)) return alert(err)
+    let trigger = {
+      on,
+      key: name,
+      func,
+    }
+    return ret(
+      await new Log(
+        sdk,
+        "addTrigger",
+        [trigger, ...col_path],
+        opt,
+        fn,
+        signer
+      ).rec(true)
     )
   } catch (e) {
     console.log(e)
