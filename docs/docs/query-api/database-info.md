@@ -31,7 +31,7 @@ await db.getVersion()
 Get current hash of chained txs. 
 
 :::info
-WeaveDB contracts keep track of valid transactions by hashing chained txIds like blockchain.  
+WeaveDB contracts keep track of valid transactions by hashing chained txIds like a blockchain.  
 `latest_hash` = hash( [ `last_hash`, `current_txId` ] )
 :::
 

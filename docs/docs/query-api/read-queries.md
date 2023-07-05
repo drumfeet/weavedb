@@ -62,7 +62,7 @@ await db.get("collection_name", [ "age", "desc" ], [ "name", "asc" ])
 await db.get("collection_name", ["age"], [ "age", ">", 20 ])
 ```
 
-`==` `>` `>=` `<` `<=` `!=` `in` `not-in` `array-contains` `array-contains-any` are supported.
+`==` `>` `>=` `<` `<=` `!=` `in` `not-in` `array-contains`, and `array-contains-any` are supported.
 
 :::info
  Dot notation can be used to specify nested object fields. (e.g. `[ "favorites.food", "==", "apple" ]`)
@@ -81,7 +81,7 @@ await db.get("collection_name", [ "age" ], [ "startAfter", 20 ], [ "endAt", 60 ]
 await db.get("collection_name", [ "age" ], [ "name", "desc" ], [ "startAfter", 20, "Bob" ])
 ```
 
-`startAt` `startAfter` `endAt` `endAfter` are supported.
+`startAt`, `startAfter`, `endAt`, and `endAfter` are supported.
 
 ### Pagination
 

@@ -13,7 +13,7 @@ Access control rules are as important as the schemas for decentralized database.
 For references, see [Initialize WeaveDB](/docs/get-started#initialize-weavedb)
 :::
 
-Add rules
+Add rules:
 
 ```js
 const rules = {
