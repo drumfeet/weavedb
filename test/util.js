@@ -59,12 +59,48 @@ async function deployContracts({
   arweave,
   contractTxId,
   arweave_wallet,
-  kv = false,
+  type = 1,
 }) {
   arweave_wallet ||= await arweave.wallets.generate()
   await addFunds(arweave, arweave_wallet)
   const walletAddress = await arweave.wallets.jwkToAddress(arweave_wallet)
 
+  async function deployContractBPT(
+    secure,
+    contractTxIdIntmax,
+    contractTxIdDfinity,
+    contractTxIdEthereum,
+    contractTxIdBundler
+  ) {
+    const contractSrc = fs.readFileSync(
+      path.join(__dirname, "../dist/weavedb-bpt/contract.js"),
+      "utf8"
+    )
+    const stateFromFile = JSON.parse(
+      fs.readFileSync(
+        path.join(__dirname, "../dist/weavedb-bpt/initial-state.json"),
+        "utf8"
+      )
+    )
+    let initialState = {
+      ...stateFromFile,
+      ...{
+        secure,
+        owner: walletAddress,
+      },
+    }
+    //initialState.contracts.intmax = contractTxIdIntmax
+    initialState.contracts.dfinity = contractTxIdDfinity
+    initialState.contracts.ethereum = contractTxIdEthereum
+    initialState.contracts.bundler = contractTxIdBundler
+    const contract = await warp.createContract.deploy({
+      wallet: arweave_wallet,
+      initState: JSON.stringify(initialState),
+      src: contractSrc,
+    })
+    await arweave.api.get("mine")
+    return contract
+  }
   async function deployContractKV(
     secure,
     contractTxIdIntmax,
@@ -207,6 +243,32 @@ async function deployContracts({
     return contractTxId
   }
 
+  async function deployContractBundler() {
+    const contractSrc = fs.readFileSync(
+      path.join(__dirname, "../dist/bundler/bundler.js"),
+      "utf8"
+    )
+    const stateFromFile = JSON.parse(
+      fs.readFileSync(
+        path.join(__dirname, "../dist/bundler/initial-state-bundler.json"),
+        "utf8"
+      )
+    )
+    const initialState = {
+      ...stateFromFile,
+      ...{
+        owner: walletAddress,
+      },
+    }
+    const { contractTxId } = await warp.createContract.deploy({
+      wallet: arweave_wallet,
+      initState: JSON.stringify(initialState),
+      src: contractSrc,
+    })
+    await arweave.api.get("mine")
+    return contractTxId
+  }
+
   async function deployContractIntmax(
     contractTxIdPoseidon1,
     contractTxIdPoseidon2
@@ -271,6 +333,7 @@ async function deployContracts({
   let intmaxTxId,
     dfinityTxId,
     ethereumTxId,
+    bundlerTxId,
     poseidon1TxId,
     poseidon2TxId,
     intercallTxId
@@ -286,9 +349,21 @@ async function deployContracts({
     intmaxTxId = await deployContractIntmax(poseidon1TxId, poseidon2TxId)
     dfinityTxId = await deployContractDfinity()
     ethereumTxId = await deployContractEthereum()
+    bundlerTxId = await deployContractBundler()
     intercallTxId = await deployIntercallContract()
-    const deployer = kv ? deployContractKV : deployContract
-    contract = await deployer(secure, intmaxTxId, dfinityTxId, ethereumTxId)
+    const deployer =
+      type === 2
+        ? deployContractKV
+        : type === 3
+        ? deployContractBPT
+        : deployContract
+    contract = await deployer(
+      secure,
+      intmaxTxId,
+      dfinityTxId,
+      ethereumTxId,
+      bundlerTxId
+    )
   } else {
     contract = { contractTxId }
   }
@@ -299,6 +374,7 @@ async function deployContracts({
     intmaxTxId,
     dfinityTxId,
     ethereumTxId,
+    bundlerTxId,
     intercallTxId,
     poseidon1TxId,
     poseidon2TxId,
@@ -311,7 +387,7 @@ async function initBeforeEach(
   secure = false,
   subscribe = false,
   wallet_type = "evm",
-  kv = false
+  type = 1
 ) {
   wallet = Wallet.generate()
   wallet2 = Wallet.generate()
@@ -323,6 +399,7 @@ async function initBeforeEach(
     intmaxTxId,
     dfinityTxId,
     ethereumTxId,
+    bundlerTxId,
     intercallTxId,
     poseidon1TxId,
     poseidon2TxId,
@@ -332,7 +409,7 @@ async function initBeforeEach(
     secure,
     warp,
     arweave,
-    kv,
+    type,
   })
   const name = "weavedb"
   const version = "1"
@@ -361,6 +438,7 @@ async function initBeforeEach(
     intmaxTxId,
     dfinityTxId,
     ethereumTxId,
+    bundlerTxId,
     intercallTxId,
     contractTxId,
   }

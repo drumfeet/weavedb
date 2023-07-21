@@ -441,7 +441,7 @@ class BPT {
           _index = greater
         } else if (!isNil(index)) {
           const [new_index, new_node] = await this.findLastIndex(
-            _index,
+            index,
             first_node,
             start,
             cache,

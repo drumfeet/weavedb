@@ -1,12 +1,14 @@
 const { build } = require("esbuild")
 const replace = require("replace-in-file")
 const contracts = [
+  "/weavedb-bpt/contract.js",
   "/weavedb-kv/contract.js",
   "/weavedb/contract.js",
   "/intercall/contract.js",
   "/intmax/intmax.js",
   "/dfinity/ii.js",
   "/ethereum/eth.js",
+  "/bundler/bundler.js",
   "/poseidon/poseidonConstants.js",
 ]
 

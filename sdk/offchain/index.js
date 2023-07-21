@@ -2,8 +2,10 @@ const { tail, isNil, clone, mergeLeft } = require("ramda")
 const base = "weavedb-contracts"
 const { handle } = require(`${base}/weavedb/contract`)
 const { handle: handle_kv } = require(`${base}/weavedb-kv/contract`)
+const { handle: handle_bpt } = require(`${base}/weavedb-bpt/contract`)
 const version = require(`${base}/weavedb/lib/version`)
 const version_kv = require(`${base}/weavedb-kv/lib/version`)
+const version_bpt = require(`${base}/weavedb-bpt/lib/version`)
 const Base = require("weavedb-base")
 let arweave = require("arweave")
 if (!isNil(arweave.default)) arweave = arweave.default
@@ -16,7 +18,8 @@ class OffChain extends Base {
     this.network = "offchain"
     this.cache = cache
     this.type = type
-    this.handle = this.type === 1 ? handle : handle_kv
+    this.handle =
+      this.type === 1 ? handle : this.type === 2 ? handle_kv : handle_bpt
     this.validity = {}
     this.txs = []
     this.arweave = arweave.init()
@@ -50,8 +53,26 @@ class OffChain extends Base {
             },
             contracts: { ethereum: "ethereum", dfinity: "dfinity" },
           }
-        : {
+        : this.type === 2
+        ? {
             version: version_kv,
+            canEvolve: true,
+            evolve: null,
+            secure: true,
+            auth: {
+              algorithms: ["secp256k1", "secp256k1-2", "ed25519", "rsa256"],
+              name: "weavedb",
+              version: "1",
+              links: {},
+            },
+            crons: {
+              lastExecuted: 0,
+              crons: {},
+            },
+            contracts: { ethereum: "ethereum", dfinity: "dfinity" },
+          }
+        : {
+            version: version_bpt,
             canEvolve: true,
             evolve: null,
             secure: true,
@@ -71,14 +92,22 @@ class OffChain extends Base {
     this.initialState = clone(this.state)
     this.height = 0
   }
+
   async initialize() {
     if (typeof this.cache === "object") await this.cache.initialize(this)
   }
+
   getSW() {
+    let kvs = {}
     return {
       kv: {
-        get: async key => (!isNil(this.kvs[key]) ? clone(this.kvs[key]) : null),
-        put: async (key, val) => (this.kvs[key] = val),
+        get: async key =>
+          !isNil(kvs[key])
+            ? clone(kvs[key])
+            : typeof this.cache === "object"
+            ? await this.cache.get(key, this)
+            : this.kvs[key] ?? null,
+        put: async (key, val) => (kvs[key] = val),
       },
       contract: { id: this.contractTxId },
       arweave,
@@ -99,10 +128,12 @@ class OffChain extends Base {
       },
     }
   }
+
   async read(input) {
     return (await this.handle(clone(this.state), { input }, this.getSW()))
       .result
   }
+
   async dryRead(state, queries) {
     let results = []
     for (const v of queries || []) {
@@ -136,8 +167,13 @@ class OffChain extends Base {
       try {
         tx = await this.handle(clone(this.state), { input: param }, sw)
         this.state = tx.state
-        if (typeof this.cache === "object") await this.cache.onWrite(tx, this)
+        if (typeof this.cache === "object") {
+          await this.cache.onWrite(tx, this, param)
+        } else if (this.type === 3) {
+          for (const k in tx.result.kvs) this.kvs[k] = tx.result.kvs[k]
+        }
       } catch (e) {
+        console.log(e)
         //console.log(typeof e === "object" ? e.message : e)
         error = e
       }
