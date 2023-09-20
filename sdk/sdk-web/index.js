@@ -50,6 +50,7 @@ Arweave = isNil(Arweave.default) ? Arweave : Arweave.default
 const Base = require("weavedb-base")
 const { handle } = require("weavedb-contracts/weavedb/contract")
 const { handle: handle_kv } = require("weavedb-contracts/weavedb-kv/contract")
+const { handle: handle_bpt } = require("weavedb-contracts/weavedb-bpt/contract")
 
 const _on = async (state, input, handle) => {
   const block = input.interaction.block
@@ -146,7 +147,8 @@ class SDK extends Base {
     this.LitJsSdk = require("@lit-protocol/sdk-browser")
     this.kvs = {}
     this.type = type
-    this.handle = this.type === 1 ? handle : handle_kv
+    this.handle =
+      this.type === 1 ? handle : this.type === 2 ? handle_kv : handle_bpt
     if (!isNil(useVM2)) this.useVM2 = useVM2
     this.LmdbCache = LmdbCache
     this.createClient = createClient
@@ -245,6 +247,10 @@ class SDK extends Base {
             if (
               compareVersions(this.state?.version || "0.26.0", "0.27.0") >= 0
             ) {
+              this.handle = handle_bpt
+            } else if (
+              compareVersions(this.state?.version || "0.26.0", "0.27.0") >= 0
+            ) {
               this.handle = handle_kv
             } else {
               this.handle = handle
@@ -308,7 +314,9 @@ class SDK extends Base {
           contractTxId =>
             new this.LmdbCache({
               ...defaultCacheOptions,
-              dbLocation: `./cache/warp/kv/lmdb/${contractTxId}`,
+              dbLocation: `${
+                this.lmdb.dir ?? "./cache"
+              }/warp/kv/lmdb/${contractTxId}`,
             })
         )
       }
@@ -317,19 +325,19 @@ class SDK extends Base {
           .useStateCache(
             new this.LmdbCache({
               ...this.Warp.defaultCacheOptions,
-              dbLocation: `./cache/warp/state`,
+              dbLocation: `${this.lmdb.dir ?? "./cache"}/warp/state`,
               ...(this.lmdb.state || {}),
             })
           )
           .useContractCache(
             new this.LmdbCache({
               ...this.Warp.defaultCacheOptions,
-              dbLocation: `./cache/warp/contracts`,
+              dbLocation: `${this.lmdb.dir ?? "./cache"}/warp/contracts`,
               ...(this.lmdb.contracts || {}),
             }),
             new this.LmdbCache({
               ...this.Warp.defaultCacheOptions,
-              dbLocation: `./cache/warp/src`,
+              dbLocation: `${this.lmdb.dir ?? "./cache"}/warp/src`,
               ...(this.lmdb.src || {}),
             })
           )
@@ -568,6 +576,21 @@ class SDK extends Base {
   }
 
   async write(func, param, dryWrite, bundle, relay = false, onDryWrite) {
+    delete param.data
+    if (JSON.stringify(param).length > 3900) {
+      return {
+        nonce: param.nonce,
+        signer: param.caller,
+        cache: false,
+        success: false,
+        duration: 0,
+        error: { message: "data too large" },
+        function: param.function,
+        state: null,
+        result: null,
+        results: [],
+      }
+    }
     let cache = !isNil(onDryWrite?.cache)
       ? onDryWrite.cache
       : !this.nocache_default
@@ -608,6 +631,7 @@ class SDK extends Base {
               "relay",
               "addTrigger",
               "removeTrigger",
+              "bundle",
             ])
           ) {
             cache = false
@@ -833,6 +857,7 @@ class SDK extends Base {
   }
   async send(param, bundle, start, read) {
     let tx = null
+    let mess = null
     try {
       tx = await this.db[
         bundle && this.network !== "localhost"
@@ -840,17 +865,18 @@ class SDK extends Base {
           : "writeInteraction"
       ](param, {})
     } catch (e) {
+      mess = e?.message ?? null
       console.log(e)
     }
     if (this.network === "localhost") await this.mineBlock()
     let state
-    if (isNil(tx.originalTxId)) {
+    if (isNil(tx?.originalTxId)) {
       return {
         success: false,
         nonce: param.nonce,
         signer: param.caller,
         duration: Date.now() - start,
-        error: { message: "tx didn't go through" },
+        error: { message: mess ?? "tx didn't go through" },
         function: param.function,
         results: [],
       }

@@ -10,6 +10,7 @@ const {
   without,
   last,
 } = require("ramda")
+const md5 = require("../../weavedb-bpt/lib/md5")
 const { clone, bigIntFromBytes } = require("./pure")
 const { validate } = require("../../common/lib/jsonschema")
 
@@ -31,7 +32,14 @@ const getField = (data, path) => {
   }
 }
 
-const mergeData = (_data, new_data, overwrite = false, signer, SmartWeave) => {
+const mergeData = (
+  _data,
+  new_data,
+  extra = {},
+  overwrite = false,
+  signer,
+  SmartWeave
+) => {
   let exists = true
   if (isNil(_data.__data) || overwrite) {
     _data.__data = {}
@@ -41,7 +49,9 @@ const mergeData = (_data, new_data, overwrite = false, signer, SmartWeave) => {
     const path = exists ? k.split(".") : [k]
     const [field, obj] = getField(_data.__data, path)
     const d = new_data[k]
-    if (is(Object)(d) && d.__op === "arrayUnion") {
+    if (is(Object)(d) && d.__op === "data") {
+      obj[field] = extra[d.key] ?? null
+    } else if (is(Object)(d) && d.__op === "arrayUnion") {
       if (complement(is)(Array, d.arr)) err()
       if (complement(is)(Array, obj[field])) obj[field] = []
       obj[field] = concat(obj[field], d.arr)
@@ -71,36 +81,8 @@ const isEvolving = state =>
   !isNil(last(state.evolveHistory)) &&
   isNil(last(state.evolveHistory).newVersion)
 
-async function getRandomIntNumber(
-  max,
-  action,
-  uniqueValue = "",
-  salt,
-  SmartWeave
-) {
-  const pseudoRandomData = SmartWeave.arweave.utils.stringToBuffer(
-    SmartWeave.block.height +
-      SmartWeave.block.timestamp +
-      SmartWeave.transaction.id +
-      action.caller +
-      uniqueValue +
-      salt.toString()
-  )
-  const hashBytes = await SmartWeave.arweave.crypto.hash(pseudoRandomData)
-  const randomBigInt = bigIntFromBytes(hashBytes)
-  return Number(randomBigInt % BigInt(max))
-}
-
-const genId = async (action, salt, SmartWeave) => {
-  const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-  let autoId = ""
-  for (let i = 0; i < 20; i++) {
-    autoId += CHARS.charAt(
-      (await getRandomIntNumber(CHARS.length, action, i, salt, SmartWeave)) - 1
-    )
-  }
-  return autoId
-}
+const genId = async (action, salt, SmartWeave) =>
+  md5(JSON.stringify(action.input))
 
 const isOwner = (signer, state) => {
   let owner = state.owner || []
@@ -151,6 +133,7 @@ const parse = async (
   contractErr = true,
   SmartWeave,
   kvs,
+  type,
   fn
 ) => {
   const { data } = state
@@ -256,7 +239,9 @@ const parse = async (
       action,
       SmartWeave,
       undefined,
-      kvs
+      kvs,
+      fn.get,
+      type
     )
     _data = doc.doc
     ;({ next_data, schema, rules, col } = doc)
@@ -264,6 +249,7 @@ const parse = async (
   let owner = state.owner || []
   if (is(String)(owner)) owner = of(owner)
   if (
+    !isNil(state.auth) &&
     includes(func)([
       "addRelayerJob",
       "removeRelayerJob",
@@ -280,7 +266,10 @@ const parse = async (
     ]) &&
     !includes(signer)(owner)
   ) {
-    err("caller is not contract owner", contractErr)
+    err(
+      `caller[${signer}] is not contract owner[${owner.join(", ")}]`,
+      contractErr
+    )
   }
   return { data, query, new_data, path, _data, schema, col, next_data }
 }
@@ -294,6 +283,7 @@ const auth = async (
   kvs,
   fn
 ) => {
+  if (isNil(state.auth)) return { signer: null, original_signer: null }
   const {
     query,
     nonce,

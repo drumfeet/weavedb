@@ -3,6 +3,11 @@ fpjson = fpjson.default || fpjson
 const jsonLogic = require("json-logic-js")
 const md5 = require("./md5")
 const {
+  sortBy,
+  identity,
+  reverse,
+  indexOf,
+  prop,
   assoc,
   tail,
   pluck,
@@ -18,6 +23,8 @@ const {
   last,
   intersection,
   append,
+  difference,
+  path: _path,
 } = require("ramda")
 const {
   parse: _parse,
@@ -70,7 +77,7 @@ const _getCol = async (path, _signer, SmartWeave, current_path = [], kvs) => {
   }
 }
 
-const validateData = ({
+const validateData = async ({
   func,
   secure,
   rules,
@@ -85,6 +92,8 @@ const validateData = ({
   new_data,
   next_data,
   path,
+  get,
+  kvs,
 }) => {
   if (
     includes(func)(["set", "add", "update", "upsert", "delete"]) &&
@@ -144,7 +153,18 @@ const validateData = ({
       }
       return elm
     }
-
+    const _parse = (query, vars) => {
+      if (is(Array, query)) {
+        query = map(v => (is(Object, v) ? _parse(v, vars) : v))(query)
+      } else if (is(Object, query)) {
+        if (is(String, query.var)) {
+          return _path(query.var.split("."))(vars)
+        } else {
+          query = map(v => _parse(v, vars))(query)
+        }
+      }
+      return query
+    }
     if (!isNil(rules)) {
       for (let k in rules || {}) {
         const [permission, _ops] = k.split(" ")
@@ -155,25 +175,58 @@ const validateData = ({
           ok = true
         } else {
           const ops = _ops.split(",")
-          if (intersection(ops)(["write", op]).length > 0) {
+          if (
+            intersection(ops)(["write", rule_data.request.method]).length > 0
+          ) {
             ok = true
           }
         }
         if (ok) {
           for (let k2 in rule || {}) {
-            setElm(k2, fpjson(clone(rule[k2]), rule_data))
+            let _op = rule[k2][0]
+            let logic = rule[k2]
+            if (_op === "if") {
+              if (!fpjson(clone(rule[k2][1]), rule_data)) continue
+              logic = rule[k2][2]
+            } else if (_op === "ifelse") {
+              if (fpjson(clone(rule[k2][1]), rule_data)) {
+                logic = rule[k2][2]
+              } else {
+                logic = rule[k2][3]
+              }
+            }
+            _op = logic[0]
+            if (_op === "get") {
+              const result =
+                (
+                  await get(
+                    state,
+                    {
+                      input: {
+                        function: "get",
+                        query: _parse(logic[1], rule_data),
+                      },
+                    },
+                    undefined,
+                    SmartWeave,
+                    kvs
+                  )
+                )?.result ?? null
+              setElm(k2, result)
+            } else {
+              setElm(k2, fpjson(clone(logic), rule_data))
+            }
           }
         }
       }
     }
-
     for (let k in rules || {}) {
       const spk = k.split(" ")
       if (spk[0] === "let") continue
       const rule = rules[k]
       const [permission, _ops] = k.split(" ")
       const ops = _ops.split(",")
-      if (intersection(ops)(["write", op]).length > 0) {
+      if (intersection(ops)(["write", rule_data.request.method]).length > 0) {
         const ok = jsonLogic.apply(rule, rule_data)
         if (permission === "allow" && ok) {
           allowed = true
@@ -181,6 +234,9 @@ const validateData = ({
       }
     }
     if (!allowed) err("operation not allowed")
+    return rule_data.resource.newData
+  } else {
+    return next_data
   }
 }
 
@@ -198,7 +254,9 @@ const getDoc = async (
   action,
   SmartWeave,
   current_path = [],
-  kvs
+  kvs,
+  get,
+  type
 ) =>
   await _getDoc(
     null,
@@ -214,7 +272,10 @@ const getDoc = async (
     action,
     SmartWeave,
     current_path,
-    kvs
+    kvs,
+    undefined,
+    get,
+    type
   )
 
 const _getDoc = async (
@@ -232,7 +293,9 @@ const _getDoc = async (
   SmartWeave,
   current_path = [],
   kvs,
-  doc
+  doc,
+  get,
+  type
 ) => {
   data = (await kv(kvs, SmartWeave).get(`data.${current_path.join("/")}`)) || {}
   const [_col, id] = path
@@ -261,6 +324,7 @@ const _getDoc = async (
       next_data = mergeData(
         clone(doc),
         new_data,
+        extra,
         true,
         _signer,
         SmartWeave
@@ -269,28 +333,33 @@ const _getDoc = async (
       next_data = mergeData(
         clone(doc),
         new_data,
+        extra,
         false,
         _signer,
         SmartWeave
       ).__data
     }
   }
-  validateData({
-    func,
-    secure,
-    rules,
-    doc,
-    SmartWeave,
-    state,
-    action,
-    _signer,
-    relayer,
-    jobID,
-    extra,
-    new_data,
-    next_data,
-    path,
-  })
+  if (type !== "cron") {
+    await validateData({
+      func,
+      secure,
+      rules,
+      doc,
+      SmartWeave,
+      state,
+      action,
+      _signer,
+      relayer,
+      jobID,
+      extra,
+      new_data,
+      next_data,
+      path,
+      get,
+      kvs,
+    })
+  }
   return path.length >= 4
     ? await _getDoc(
         doc.subs,
@@ -307,7 +376,9 @@ const _getDoc = async (
         SmartWeave,
         current_path,
         kvs,
-        doc
+        doc,
+        get,
+        type
       )
     : {
         doc,
@@ -333,7 +404,9 @@ const parse = async (
   salt,
   contractErr = true,
   SmartWeave,
-  kvs
+  kvs,
+  get,
+  type
 ) => {
   return await _parse(
     state,
@@ -344,7 +417,8 @@ const parse = async (
     contractErr,
     SmartWeave,
     kvs,
-    { getDoc, getCol, addNewDoc }
+    type,
+    { getDoc, getCol, addNewDoc, get }
   )
 }
 
@@ -405,9 +479,13 @@ const _parser = query => {
   let _startAfter = null
   let _endAt = null
   let _endBefore = null
+  let _startAtCursor = null
+  let _startAfterCursor = null
+  let _endAtCursor = null
+  let _endBeforeCursor = null
   let _array_contains = null
   let _array_contains_any = null
-  for (const v of opt) {
+  for (const v of clone(opt)) {
     if (is(Number)(v)) {
       if (isNil(q.limit)) {
         if (v > 1000) err(`limit cannot be above 1000 [${v}]`)
@@ -424,36 +502,76 @@ const _parser = query => {
       if (v.length === 0) {
         err(`empty query option []`)
       } else if (v[0] === "startAt") {
-        if (!isNil(_startAt) || !isNil(_startAfter)) {
+        if (
+          !isNil(_startAt) ||
+          !isNil(_startAfter) ||
+          !isNil(_startAtCursor) ||
+          !isNil(_startAfterCursor)
+        ) {
           err(`only one startAt/startAfter is allowed`)
         } else if (v.length <= 1) {
           err(`startAt has no value`)
         } else {
-          _startAt = v
+          if (v[1].__cursor__) {
+            _startAtCursor = v
+            _startAtCursor[1].data.__id__ = _startAtCursor[1].id
+          } else {
+            _startAt = v
+          }
         }
       } else if (v[0] === "startAfter") {
-        if (!isNil(_startAt) || !isNil(_startAfter)) {
+        if (
+          !isNil(_startAt) ||
+          !isNil(_startAfter) ||
+          !isNil(_startAtCursor) ||
+          !isNil(_startAfterCursor)
+        ) {
           err(`only one startAt/startAfter is allowed`)
         } else if (v.length <= 1) {
           err(`startAfter has no value`)
         } else {
-          _startAfter = v
+          if (v[1].__cursor__) {
+            _startAfterCursor = v
+            _startAfterCursor[1].data.__id__ = _startAfterCursor[1].id
+          } else {
+            _startAfter = v
+          }
         }
       } else if (v[0] === "endAt") {
-        if (!isNil(_endAt) || !isNil(_endBefore)) {
+        if (
+          !isNil(_endAt) ||
+          !isNil(_endBefore) ||
+          !isNil(_endAtCursor) ||
+          !isNil(_endBeforeCursor)
+        ) {
           err(`only one endAt/endBefore is allowed`)
         } else if (v.length <= 1) {
           err(`endAt has no value`)
         } else {
-          _endAt = v
+          if (v[1].__cursor__) {
+            _endAtCursor = v
+            _endAtCursor[1].data.__id__ = _endAtCursor[1].id
+          } else {
+            _endAt = v
+          }
         }
       } else if (v[0] === "endBefore") {
-        if (!isNil(_endAt) || !isNil(_endBefore)) {
+        if (
+          !isNil(_endAt) ||
+          !isNil(_endBefore) ||
+          !isNil(_endAtCursor) ||
+          !isNil(_endBeforeCursor)
+        ) {
           err(`only one endAt/endBefore is allowed`)
         } else if (v.length <= 1) {
           err(`endBefore has no value`)
         } else {
-          _endBefore = v
+          if (v[1].__cursor__) {
+            _endBeforeCursor = v
+            _endBeforeCursor[1].data.__id__ = _endBeforeCursor[1].id
+          } else {
+            _endBefore = v
+          }
         }
       } else if (v.length === 3) {
         if (
@@ -525,7 +643,14 @@ const _parser = query => {
               _filter[v[1]] = v
             }
           } else if (v[1] === "==") {
-            if (_keys[v[0]])
+            if (
+              !isNil(_filter.range) ||
+              !isNil(_filter["!="]) ||
+              !isNil(_filter["in"]) ||
+              !isNil(_filter["not-in"])
+            ) {
+              err(`== must come before inequity [${JSON.stringify(v)}]`)
+            } else if (_keys[v[0]])
               err(`only one == per field is allowed [${JSON.stringify(v)}]`)
             _filter["=="].push(v)
             _keys[v[0]] = true
@@ -560,7 +685,10 @@ const _parser = query => {
   q.limit ??= 1000
   q.start = _startAt ?? _startAfter ?? null
   q.end = _endAt ?? _endBefore ?? null
+  q.startCursor = _startAtCursor ?? _startAfterCursor ?? null
+  q.endCursor = _endAtCursor ?? _endBeforeCursor ?? null
   q.sort = _sort ?? []
+  q.reverse = { start: false, end: false }
   q.array = _filter["array-contains"] ?? _filter["array-contains-any"] ?? null
   q.equals = _filter["=="]
   q.range =
@@ -572,8 +700,10 @@ const _parser = query => {
       : !isNil(_filter["!="])
       ? [_filter["!="]]
       : null)
+  q.sortByTail = false
   return q
 }
+
 const checkStartEnd = q => {
   if (q.equals.length > 0 && !isNil(q.range)) {
     if (includes(q.range[0][0], pluck(0, q.equals))) {
@@ -639,32 +769,74 @@ const checkStartEnd = q => {
         end[1] ??= {}
         if (end[0] === "endAt") end[0] = "endBefore"
         end[1][v[0]] = v[2]
+        q.reverse.end = true
       } else if (v[1] === "<=") {
         end ??= ["endAt"]
         end[1] ??= {}
         end[1][v[0]] = v[2]
+        q.reverse.end = true
       } else if (v[1] === ">") {
         start ??= ["startAfter"]
         start[1] ??= {}
         if (start[0] === "startAt") start[0] = "startAfter"
         start[1][v[0]] = v[2]
+        q.reverse.start = true
       } else if (v[1] === ">=") {
         start ??= ["startAt"]
         start[1] ??= {}
         start[1][v[0]] = v[2]
+        q.reverse.start = true
       }
     }
   }
   q.start = start
   q.end = end
 }
+
 const checkSort = q => {
   let sort = []
-  for (const v of q.equals) {
-    sort.push([v[0]])
+  if (q.equals.length > 0) {
+    const eq_keys = pluck(0, q.equals)
+    const qkeys = pluck(0, q.sort)
+    let ex = false
+    for (const v of qkeys) {
+      if (!includes(v, eq_keys)) {
+        ex = true
+      } else if (ex) {
+        err(`the wrong sort ${JSON.stringify(q.sort)}`)
+      }
+    }
+    const dups = intersection(eq_keys, qkeys)
+    const imap = indexOf(prop(0), q.sort)
+    let new_sort = slice(dups.length, q.sort.length, q.sort)
+    for (const v of reverse(eq_keys)) {
+      new_sort.unshift(imap[v] ?? [v, "asc"])
+      sort.unshift(imap[v] ?? [v, "asc"])
+    }
+    q.sort = new_sort
   }
+  const next_index = sort.length
   if (!isNil(q.range?.[0][0])) {
-    sort.push([q.range?.[0][0]])
+    if (q.sort.length === sort.length || q.range[0][1] === "in") {
+      sort.push([q.range[0][0]])
+    } else if (
+      !isNil(q.sort[next_index]) &&
+      q.range[0][0] !== q.sort[next_index][0]
+    ) {
+      err(`the sort field at [${next_index}] must be [${q.range[0][0]}]`)
+    }
+
+    if (includes(q.range[0][1], ["!=", "in", "not-in"])) {
+      const qkeys = pluck(0, q.sort)
+      if (qkeys.length !== 0 && qkeys[next_index] !== q.range[0][0]) {
+        if (includes(q.range[0][0], qkeys)) {
+          err(`the wrong sort ${JSON.stringify(q.sort)}`)
+        } else {
+          q.sort.splice(q.equals.length, 0, [q.range[0][0], "asc"])
+          q.sortByTail = true
+        }
+      }
+    }
   }
   let i = 0
   for (const v of q.sort || []) {
@@ -685,10 +857,11 @@ const checkSort = q => {
     return v
   })(sort)
 }
+
 const buildQueries = q => {
   q.queries = []
   if (!isNil(q.array)) {
-    let opt = {}
+    let opt = { limit: q.limit }
     if (!isNil(q.start)) opt[q.start[0]] = q.start[1]
     if (!isNil(q.end)) opt[q.end[0]] = q.end[1]
     if (q.array[1] === "array-contains-any") {
@@ -705,47 +878,58 @@ const buildQueries = q => {
   } else if (includes(q.range?.[0]?.[1], ["!=", "not-in", "in"])) {
     const op = q.range?.[0]?.[1]
     if (op === "!=") {
+      let opt1 = {}
       let end = clone(q.end)
       end ??= ["endBefore"]
       end[1] ??= {}
       if (end[0] !== "endBefore") end[0] = "endBefore"
       end[1][q.range[0][0]] = q.range[0][2]
-      let opt1 = { endBefore: end[1] }
+      opt1.endBefore = end[1]
       if (!isNil(q.start)) opt1[q.start[0]] = q.start[1]
-
+      let opt2 = {}
       let start = clone(q.start)
       start ??= ["startAfter"]
       start[1] ??= {}
       if (start[0] !== "startAfter") start[0] = "startAfter"
       start[1][q.range[0][0]] = q.range[0][2]
-      let opt2 = { startAfter: start[1] }
+      opt2.startAfter = start[1]
       if (!isNil(q.end)) opt2[q.end[0]] = q.end[1]
       q.queries = [{ opt: opt1 }, { opt: opt2 }]
+      q.reverse.start = true
+      q.reverse.end = true
+      q.sortRange = true
     } else if (op === "in") {
-      for (let v of q.range[0][2]) {
+      let __ranges = sortBy(identity)(q.range[0][2])
+      for (let v of __ranges) {
+        let opt = {}
         let start = clone(q.start)
         start ??= ["startAt"]
         start[1] ??= {}
         start[1][q.range[0][0]] = v
+        opt.startAt = start[1]
         let end = clone(q.end)
         end ??= ["endAt"]
         end[1] ??= {}
         end[1][q.range[0][0]] = v
-        q.queries.push({ opt: { startAt: start[1], endAt: end[1] } })
+        opt.endAt = end[1]
+        q.queries.push({ opt })
+        q.sortRange = true
+        q.reverse.start = true
+        q.reverse.end = true
       }
     } else if (op === "not-in") {
       let i = 0
       let prev = null
-      for (let v of q.range[0][2]) {
+      let __ranges = sortBy(identity)(q.range[0][2])
+      for (let v of __ranges) {
         let opt = {}
         let start = clone(q.start)
         if (i !== 0) {
-          start ??= ["startAt"]
+          start ??= ["startAfter"]
           start[1] ??= {}
-          start[1][q.range[0][0]] = v
+          start[1][q.range[0][0]] = prev
         }
         if (!isNil(start)) opt[start[0]] = start[1]
-
         let end = clone(q.end)
         end ??= ["endBefore"]
         end[1] ??= {}
@@ -767,8 +951,11 @@ const buildQueries = q => {
         prev = v
         i++
       }
+      q.sortRange = true
+      q.reverse.start = true
+      q.reverse.end = true
     }
-    q.type = "ranges"
+    q.type = q.sortByTail ? "pranges" : "ranges"
   } else {
     q.type = "range"
     let opt = { limit: q.limit }

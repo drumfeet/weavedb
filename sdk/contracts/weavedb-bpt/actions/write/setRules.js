@@ -10,8 +10,15 @@ const setRules = async (
   signer,
   contractErr = true,
   SmartWeave,
-  kvs
+  kvs,
+  executeCron,
+  depth = 1,
+  type = "direct"
 ) => {
+  if ((state.bundlers ?? []).length !== 0 && type === "direct") {
+    err("only bundle queries are allowed")
+  }
+
   let original_signer = null
   if (isNil(signer)) {
     ;({ signer, original_signer } = await validate(
@@ -38,12 +45,6 @@ const setRules = async (
     const permission = keys[0]
     if (keys.length !== 2 && permission !== "let") err()
     if (!includes(permission)(["allow", "deny", "let"])) err()
-    if (keys.length === 2) {
-      const ops = keys[1].split(",")
-      if (difference(ops, ["write", "create", "update", "delete"]).length > 0) {
-        err()
-      }
-    }
     if (
       permission !== "let" &&
       !is(Boolean)(jsonLogic.apply(new_data[k], {}))

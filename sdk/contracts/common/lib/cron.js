@@ -36,9 +36,19 @@ const executeCron =
       return query
     }
     for (let job of cron.crons.jobs) {
-      const op = head(job)
+      let op = head(job)
       let _var = null
       let query = null
+      if (op === "if") {
+        if (!fpjson(job[1], vars)) continue
+        job = job[2]
+        op = head(job)
+      }
+      if (op === "ifelse") {
+        job = fpjson(job[1], vars) ? job[2] : job[3]
+        op = head(job)
+      }
+      if (op === "break") break
       if (includes(op)(["get", "let"])) {
         _var = job[1]
         query = job[2]
@@ -53,10 +63,16 @@ const executeCron =
         const _default = job[3]
         vars[_var] =
           (
-            await ops.get(state, {
-              caller: state.owner,
-              input: { function: "get", query: await parse(query) },
-            })
+            await ops.get(
+              state,
+              {
+                caller: state.owner,
+                input: { function: "get", query: await parse(query) },
+              },
+              undefined,
+              SmartWeave,
+              kvs
+            )
           ).result || _default
       } else if (
         includes(op)(["set", "upsert", "add", "delete", "update", "batch"])
@@ -75,6 +91,8 @@ const executeCron =
         params.push(kvs)
         params.push(executeCron)
         params.push(depth + 1)
+        params.push("cron")
+        params.push(ops.get)
         await ops[op](...params)
       }
     }
@@ -112,7 +130,7 @@ const cron = ops => async (state, SmartWeave, _kvs) => {
     }
   }
   _state.crons.lastExecuted = SmartWeave.block.timestamp
-  return { state: _state }
+  return { state: _state, count: crons.length }
 }
 
 module.exports = { cron, executeCron }

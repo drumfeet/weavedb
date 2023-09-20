@@ -11,8 +11,14 @@ const update = async (
   SmartWeave,
   kvs,
   executeCron,
-  depth = 1
+  depth = 1,
+  type = "direct",
+  get
 ) => {
+  if ((state.bundlers ?? []).length !== 0 && type === "direct") {
+    err("only bundle queries are allowed")
+  }
+
   let original_signer = null
   if (isNil(signer)) {
     ;({ signer, original_signer } = await validate(
@@ -32,7 +38,9 @@ const update = async (
     0,
     contractErr,
     SmartWeave,
-    kvs
+    kvs,
+    get,
+    type
   )
   if (isNil(_data.__data)) err(`Data doesn't exist`)
   validateSchema(schema, next_data, contractErr)
@@ -64,7 +72,11 @@ const update = async (
       }
     )
   }
-  return wrapResult(state, original_signer, SmartWeave)
+  return wrapResult(state, original_signer, SmartWeave, {
+    docID: last(path),
+    doc: next_data,
+    path: init(path),
+  })
 }
 
 module.exports = { update }

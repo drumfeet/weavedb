@@ -69,6 +69,7 @@ const tests = {
     expect(await db.get("ppl", "Bob")).to.eql(data)
     await db.update({ age: 25 }, "ppl", "Bob")
     expect(await db.get("ppl", "Bob")).to.eql({ name: "Bob", age: 25 })
+
     await db.update({ age: db.inc(5) }, "ppl", "Bob")
     expect(await db.get("ppl", "Bob")).to.eql({ name: "Bob", age: 30 })
     await db.update({ age: db.del() }, "ppl", "Bob")
@@ -355,6 +356,7 @@ const tests = {
       data2,
       data,
     ])
+
     await db.addIndex([["age"], ["name", "desc"]], "ppl", {
       ar: arweave_wallet,
     })
@@ -384,6 +386,10 @@ const tests = {
     expect(await db.getIndexes("ppl")).to.eql([
       [["__id__", "asc"]],
       [["name", "asc"]],
+      [
+        ["name", "asc"],
+        ["age", "asc"],
+      ],
       [["age", "asc"]],
       [
         ["age", "asc"],
@@ -400,10 +406,6 @@ const tests = {
         ["height", "desc"],
       ],
       [["height", "asc"]],
-      [
-        ["name", "asc"],
-        ["age", "asc"],
-      ],
     ])
   },
 
@@ -1149,8 +1151,15 @@ const tests = {
       do: false,
       jobs: [["add", [{ age: db.inc(1) }, "ppl"]]],
     }
+    const trigger = {
+      key: "inc-count",
+      on: "create",
+      func: [
+        ["upsert", [{ count: db.inc(1) }, "like-count", { var: "data.id" }]],
+      ],
+    }
 
-    await db.batch(
+    const tx = await db.batch(
       [
         ["addCron", cron, "inc age"],
         ["setSchema", schema, "ppl"],
@@ -1161,6 +1170,7 @@ const tests = {
         ["addIndex", index, "ppl"],
         ["addOwner", addr2],
         ["addRelayerJob", jobID, job],
+        ["addTrigger", trigger, "ppl"],
       ],
       {
         ar: arweave_wallet,
@@ -1175,6 +1185,7 @@ const tests = {
     expect(await db.getOwner()).to.eql([addr, addr2])
     expect(await db.getRelayerJob(jobID)).to.eql(job)
     expect((await db.getCrons()).crons).to.eql({ "inc age": cron })
+    expect((await db.getTriggers("ppl"))[0]).to.eql(trigger)
     await db.batch(
       [
         ["removeCron", "inc age"],

@@ -65,6 +65,7 @@ const no_paths = [
   "listRelayerJobs",
   "getEvolve",
   "getInfo",
+  "getBundlers",
   "addCron",
   "removeCron",
   "setAlgorithms",
@@ -159,8 +160,13 @@ class Base {
       "listCollections",
       "getInfo",
       "getNonce",
+      "getBundlers",
     ]
   }
+  data(key) {
+    return { __op: "data", key }
+  }
+
   signer() {
     return { __op: "signer" }
   }
@@ -236,6 +242,10 @@ class Base {
     return this._write2("addOwner", { address }, opt)
   }
 
+  async setBundlers(bundlers, opt) {
+    return this._write2("setBundlers", { bundlers }, opt)
+  }
+
   async migrate(version, opt) {
     return this._write2("migrate", { version }, opt)
   }
@@ -293,7 +303,9 @@ class Base {
       relay,
       jobID,
       multisigs,
-      linkedAccount
+      linkedAccount,
+      noauth,
+      data
     if (!isNil(opt)) {
       ;({
         jobID,
@@ -310,6 +322,8 @@ class Base {
         extra,
         multisigs,
         linkedAccount,
+        noauth,
+        data,
       } = opt)
     }
     if (!isNil(linkedAccount)) wallet = linkedAccount
@@ -327,8 +341,9 @@ class Base {
       jobID,
       multisigs,
       onDryWrite,
+      data,
     ]
-    if (func === "bundle" && this.type === 3) {
+    if ((func === "bundle" && this.type === 3) || noauth || this.noauth) {
       return await this.writeWithoutWallet(
         func,
         query,
@@ -338,7 +353,8 @@ class Base {
         relay,
         jobID,
         multisigs,
-        onDryWrite
+        onDryWrite,
+        data
       )
     } else if (
       isNil(intmax) &&
@@ -381,13 +397,15 @@ class Base {
           relay,
           jobID,
           multisigs,
-          onDryWrite
+          onDryWrite,
+          data
         )
   }
 
   setDefaultWallet(wallet, type = "evm") {
     this.defaultWallet = { wallet, type }
   }
+
   _repeatQuery(func, query, attempt = 1) {
     return new Promise((req, rej) => {
       setTimeout(async () => {
@@ -404,6 +422,7 @@ class Base {
       }, 1000)
     })
   }
+
   async repeatQuery(func, query, attempt = 1) {
     try {
       return await func(...query)
@@ -412,6 +431,7 @@ class Base {
       return this._repeatQuery(func, query)
     }
   }
+
   async createTempAddressWithWebAuthn(_identity, expiry, linkTo, opt = {}) {
     if (typeof window === "undefined") {
       throw new Error("WebAuthn is only compaitble with browser")
@@ -512,6 +532,7 @@ class Base {
     identity.webauthn = _identity
     return { identity, tx: await this.write("relay", relay_params) }
   }
+
   async createTempAddressWithLens(expiry, linkTo, opt = {}) {
     try {
       if (typeof window === "undefined") {
@@ -679,7 +700,7 @@ class Base {
       addr = evm
     }
     if (isNil(addr) && !isNil(this.web3)) {
-      const accounts = await ethereum.request({ method: "eth_accounts" })
+      const accounts = await ethereum.request({ method: "eth_requestAccounts" })
       addr = accounts[0]
     }
     opt.wallet = wallet
@@ -725,14 +746,10 @@ class Base {
     if (!isNil(expiry)) param.expiry = expiry
     if (!isNil(linkTo)) param.linkTo = linkTo
     const tx = await this.addAddressLink(param, { nonce, ...opt })
-    if (isNil(tx.err)) {
-      identity.signer = tx.caller
-      identity.type = type
-      identity.linkedAccount = linkTo || tx.caller
-      return { tx, identity }
-    } else {
-      return null
-    }
+    identity.signer = tx.signer
+    identity.type = type
+    identity.linkedAccount = linkTo || tx.signer
+    return { tx, identity }
   }
 
   async addAddressLink(query, opt) {
@@ -755,7 +772,8 @@ class Base {
     relay,
     jobID,
     multisigs,
-    onDryWrite
+    onDryWrite,
+    __data__
   ) {
     let signer, caller, pkey
     if (!isNil(privateKey)) {
@@ -767,7 +785,7 @@ class Base {
       signer = wallet.getAddressString()
       pkey = wallet.getPrivateKey()
     } else if (!isNil(this.web3)) {
-      const accounts = await ethereum.request({ method: "eth_accounts" })
+      const accounts = await ethereum.request({ method: "eth_requestAccounts" })
       signer = accounts[0]
     }
     if (isNil(signer)) throw Error("No wallet to sign")
@@ -808,14 +826,14 @@ class Base {
           version: "V4",
         })
 
-    const param = mergeLeft(extra, {
+    let param = mergeLeft(extra, {
       function: func,
       query,
       signature,
       nonce,
       caller,
     })
-
+    if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
     bundle ||= this.network === "mainnet"
@@ -833,7 +851,8 @@ class Base {
     relay,
     jobID,
     multisigs,
-    onDryWrite
+    onDryWrite,
+    __data__
   ) {
     let addr = ii.toJSON()[0]
     const isaddr = !isNil(addr)
@@ -873,6 +892,7 @@ class Base {
       caller: addr,
       type: "ed25519",
     })
+    if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
     return await this.write(func, param, dryWrite, bundle, relay, onDryWrite)
@@ -889,7 +909,8 @@ class Base {
     relay,
     jobID,
     multisigs,
-    onDryWrite
+    onDryWrite,
+    __data__
   ) {
     const wallet = is(Object, ar) && ar.walletName === "ArConnect" ? ar : null
     let addr = null
@@ -940,6 +961,7 @@ class Base {
       pubKey,
       type: "rsa256",
     })
+    if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
     return await this.write(func, param, dryWrite, bundle, relay, onDryWrite)
@@ -956,7 +978,8 @@ class Base {
     relay,
     jobID,
     multisigs,
-    onDryWrite
+    onDryWrite,
+    __data__
   ) {
     const wallet = is(Object, intmax) ? intmax : null
     let addr = null
@@ -1022,6 +1045,7 @@ class Base {
             type: "secp256k1-2",
           }
     )
+    if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
     return await this.write(func, param, dryWrite, bundle, relay, onDryWrite)
@@ -1128,9 +1152,11 @@ class Base {
     relay,
     jobID,
     multisigs,
-    onDryWrite
+    onDryWrite,
+    __data__
   ) {
     const param = mergeLeft(extra, { function: func, query })
+    if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
     bundle ||= this.network === "mainnet"
@@ -1159,7 +1185,7 @@ for (const v of readQueries) {
   }
 }
 
-const reads = ["getOwner", "getEvolve", "getInfo"]
+const reads = ["getOwner", "getEvolve", "getInfo", "getBundlers"]
 
 for (const v of reads) {
   Base.prototype[v] = async function (nocache) {
@@ -1168,6 +1194,7 @@ for (const v of reads) {
 }
 
 const writes = [
+  "tick",
   "relay",
   "set",
   "delete",

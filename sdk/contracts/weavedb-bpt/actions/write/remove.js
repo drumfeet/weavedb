@@ -13,8 +13,13 @@ const remove = async (
   SmartWeave,
   kvs,
   executeCron,
-  depth
+  depth = 1,
+  type = "direct",
+  get
 ) => {
+  if ((state.bundlers ?? []).length !== 0 && type === "direct") {
+    err("only bundle queries are allowed")
+  }
   let original_signer = null
   if (isNil(signer)) {
     ;({ signer, original_signer } = await validate(
@@ -34,7 +39,9 @@ const remove = async (
     0,
     contractErr,
     SmartWeave,
-    kvs
+    kvs,
+    get,
+    type
   )
   if (isNil(_data.__data)) err(`Data doesn't exist`)
   let { before, after } = await del(
@@ -54,12 +61,21 @@ const remove = async (
       executeCron,
       depth,
       {
-        data: { before, after, id: last(path), setter: _data.setter },
+        data: {
+          before: before.val,
+          after: after.val,
+          id: last(path),
+          setter: _data.setter,
+        },
       }
     )
   }
 
-  return wrapResult(state, original_signer, SmartWeave)
+  return wrapResult(state, original_signer, SmartWeave, {
+    docID: last(path),
+    doc: null,
+    path: init(path),
+  })
 }
 
 module.exports = { remove }

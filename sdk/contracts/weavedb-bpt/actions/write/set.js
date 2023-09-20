@@ -1,5 +1,5 @@
 const { init, last, isNil } = require("ramda")
-const { parse, trigger } = require("../../lib/utils")
+const { err, parse, trigger } = require("../../lib/utils")
 const { validateSchema, wrapResult } = require("../../../common/lib/utils")
 const { validate } = require("../../lib/validate")
 const { put } = require("../../lib/index")
@@ -11,8 +11,13 @@ const set = async (
   SmartWeave,
   kvs,
   executeCron,
-  depth = 1
+  depth = 1,
+  type = "direct",
+  get
 ) => {
+  if ((state.bundlers ?? []).length !== 0 && type === "direct") {
+    err("only bundle queries are allowed")
+  }
   let original_signer = null
   if (isNil(signer)) {
     ;({ signer, original_signer } = await validate(
@@ -32,7 +37,9 @@ const set = async (
     0,
     contractErr,
     SmartWeave,
-    kvs
+    kvs,
+    get,
+    type
   )
   validateSchema(schema, next_data, contractErr)
   let { before, after } = await put(
@@ -46,7 +53,7 @@ const set = async (
   )
   if (depth < 10) {
     state = await trigger(
-      "create",
+      ["create"],
       state,
       path,
       SmartWeave,
@@ -63,7 +70,11 @@ const set = async (
       }
     )
   }
-  return wrapResult(state, original_signer, SmartWeave)
+  return wrapResult(state, original_signer, SmartWeave, {
+    docID: last(path),
+    doc: next_data,
+    path: init(path),
+  })
 }
 
 module.exports = { set }

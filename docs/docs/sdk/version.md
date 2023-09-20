@@ -15,6 +15,188 @@ await db.getVersion()
 
 ## Change Logs
 
+### v0.29.2-beta (September 4, 2023)
+
+#### Source Transaction Id
+
+[909e5jfe_bOf4q1HE0cRRXlxcmhENzmUI8nbCUhaoRY](https://sonar.warp.cc/#/app/source/909e5jfe_bOf4q1HE0cRRXlxcmhENzmUI8nbCUhaoRY)
+
+#### Added Features
+
+- fix temp address error
+
+### v0.29.1-beta (September 4, 2023)
+
+#### Source Transaction Id
+
+[l2Qub_LSlynUUD7cCIBf3_ElN0uQ8gzUKqkFlq1XHvo](https://sonar.warp.cc/#/app/source/l2Qub_LSlynUUD7cCIBf3_ElN0uQ8gzUKqkFlq1XHvo)
+
+#### Added Features
+
+- fix [trigger](/docs/sdk/triggers) bugs
+
+### v0.29.0-beta (August 31, 2023)
+
+#### Source Transaction Id
+
+[9fz_LO8j7FqVsJyTlbEB2ECh5kPt6k9y8lUEX2zY2q4](https://sonar.warp.cc/#/app/source/9fz_LO8j7FqVsJyTlbEB2ECh5kPt6k9y8lUEX2zY2q4)
+
+#### Added Features
+
+- deterministic ID generation with input values for [add queries](/docs/sdk/queries#add)
+
+### v0.28.16-alpha (August 28, 2023)
+
+#### Source Transaction Id
+
+[WdyOy81fNMhvlHokheoiQry73Ra5ODtVQVCdI1fHbjc](https://sonar.warp.cc/#/app/source/WdyOy81fNMhvlHokheoiQry73Ra5ODtVQVCdI1fHbjc)
+
+#### Added Features
+
+- [conditional statements in access control rules](/docs/sdk/rules#conditional-statements)
+- [renaming method in access control rules](/docs/sdk/rules#renaming-method)
+
+### v0.28.15-alpha (August 27, 2023)
+
+#### Source Transaction Id
+
+[rZmICMmGJjbjv8yl5PbMsOJ3OV-_WBfYdK8qOWa572E](https://sonar.warp.cc/#/app/source/rZmICMmGJjbjv8yl5PbMsOJ3OV-_WBfYdK8qOWa572E)
+
+#### Added Features
+
+- [get query in access control](/docs/sdk/rules#get-other-data)
+
+### v0.28.14-alpha (August 25, 2023)
+
+#### Source Transaction Id
+
+[9VvyP3R36CAsF9MqeRVwmadvYAsrnh4JwlvZqSIBPVA](https://sonar.warp.cc/#/app/source/9VvyP3R36CAsF9MqeRVwmadvYAsrnh4JwlvZqSIBPVA)
+
+#### Added Features
+
+- [tick](/docs/sdk/crons/#tick)
+- [conditional statements](/docs/sdk/crons#conditional-statements) for FPJSON
+
+### v0.28.13-alpha (August 14, 2023)
+
+#### Source Transaction Id
+
+[P6CfhDCAdDDmdKrsERX-MR6ZRp_aGpa3jEhqIytworE](https://sonar.warp.cc/#/app/source/P6CfhDCAdDDmdKrsERX-MR6ZRp_aGpa3jEhqIytworE)
+
+#### Added Features
+
+- fix inequality indexes
+
+### v0.28.12-alpha (August 1, 2023)
+
+#### Source Transaction Id
+
+[Pn8N5kerhwi6U9mYk4JQ6mVPoFGdMVzQDZiWzNtInqM](https://sonar.warp.cc/#/app/source/Pn8N5kerhwi6U9mYk4JQ6mVPoFGdMVzQDZiWzNtInqM)
+
+#### Added Features
+
+- [data()](/docs/sdk/queries#data)
+
+### v0.28.11-alpha (July 30, 2023)
+
+#### Source Transaction Id
+
+[F_n-VWv3zYS8sxmKHaURqTJ_Y6uRvQTy70nEm-DVSns](https://sonar.warp.cc/#/app/source/F_n-VWv3zYS8sxmKHaURqTJ_Y6uRvQTy70nEm-DVSns)
+
+#### Added Features
+
+- fix index pagination with cursor
+
+### v0.28.10-alpha (July 28, 2023)
+
+#### Source Transaction Id
+
+[vz1nYmMjPxQEviw5P20fcAb8WxRfe3APWt1w3Fcatlg](https://sonar.warp.cc/#/app/source/vz1nYmMjPxQEviw5P20fcAb8WxRfe3APWt1w3Fcatlg)
+
+#### Added Features
+
+- fix cron/trigger executions
+
+### v0.28.9-alpha (July 26, 2023)
+
+#### Source Transaction Id
+
+[QWsm7NaS1MCC_p4nS3XUSH-6tkQSKPADxrmRCxTDWrg](https://sonar.warp.cc/#/app/source/QWsm7NaS1MCC_p4nS3XUSH-6tkQSKPADxrmRCxTDWrg)
+
+#### Added Features
+
+- == with !=
+
+### v0.28.8-alpha (July 26, 2023)
+
+#### Source Transaction Id
+
+[W1L9vOPCnVMTzBTZhpBXp3GhxstotKGaa5C62pVj2kI](https://sonar.warp.cc/#/app/source/W1L9vOPCnVMTzBTZhpBXp3GhxstotKGaa5C62pVj2kI)
+
+#### Added Features
+
+- multiple == with sort
+
+### v0.28.7-alpha (July 25, 2023)
+
+#### Source Transaction Id
+
+[EkkqClraVei8pndca4T2YyYKenQ9Tt6tfxJ0OkIxoXQ](https://sonar.warp.cc/#/app/source/EkkqClraVei8pndca4T2YyYKenQ9Tt6tfxJ0OkIxoXQ)
+
+#### Added Features
+
+- == with sort
+
+### v0.28.6-alpha (July 25, 2023)
+
+#### Source Transaction Id
+
+[POv0j2x0e1ZZ_3_0CU8ZpihMTSXipjn5Yi3iLY-WP40](https://sonar.warp.cc/#/app/source/POv0j2x0e1ZZ_3_0CU8ZpihMTSXipjn5Yi3iLY-WP40)
+
+#### Added Features
+
+- in/not-in/!=/array-contains-any with sort
+
+### v0.28.5-alpha (July 25, 2023)
+
+#### Source Transaction Id
+
+[ZF4f7cHYwNMdERuRF6nx-dQrMB65rOz4nqlpZlg3HWQ](https://sonar.warp.cc/#/app/source/ZF4f7cHYwNMdERuRF6nx-dQrMB65rOz4nqlpZlg3HWQ)
+
+#### Added Features
+
+- fix relay query with bundle
+
+### v0.28.4-alpha (July 23, 2023)
+
+#### Source Transaction Id
+
+[sFIFcvpaDOrZ4TYrvd_OOrO-z-mN8ZD19LIMxQOk0ng](https://sonar.warp.cc/#/app/source/sFIFcvpaDOrZ4TYrvd_OOrO-z-mN8ZD19LIMxQOk0ng)
+
+#### Added Features
+
+- fix B+ indexer #2
+
+### v0.28.3-alpha (July 22, 2023)
+
+#### Source Transaction Id
+
+[knG74NwwNXSHrVhI4UE2f6tOMilS8WF-63xBCYcYG_s](https://sonar.warp.cc/#/app/source/knG74NwwNXSHrVhI4UE2f6tOMilS8WF-63xBCYcYG_s)
+
+#### Added Features
+
+- fix B+ tree indexer
+
+### v0.28.2-alpha (July 22, 2023)
+
+#### Source Transaction Id
+
+[f5Ic20jedVx_H_mr5K60mEWE-c4N0ht0Au_NzKnp8yo](https://sonar.warp.cc/#/app/source/f5Ic20jedVx_H_mr5K60mEWE-c4N0ht0Au_NzKnp8yo)
+
+#### Added Features
+
+- [setBundlers / getBundlers](/docs/sdk/queries#setbundlers--getbundlers)
+
 ### v0.28.1-alpha (July 20, 2023)
 
 #### Source Transaction Id
@@ -23,7 +205,7 @@ await db.getVersion()
 
 #### Added Features
 
--  remove signature from [bundle query]((/docs/sdk/queries#bundle))
+- remove signature from [bundle query](/docs/sdk/queries#bundle)
 
 ### v0.28.0-alpha (July 20, 2023)
 
@@ -33,7 +215,7 @@ await db.getVersion()
 
 #### Added Features
 
--  new B+ tree indexer
+- new B+ tree indexer
 
 ### v0.27.0-alpha (May 20, 2023)
 
@@ -43,8 +225,18 @@ await db.getVersion()
 
 #### Added Features
 
--  use [kv storage](https://academy.warp.cc/docs/sdk/advanced/kv-storage) for data and indexes
+- use [kv storage](https://academy.warp.cc/docs/sdk/advanced/kv-storage) for data and indexes
 - [triggers](/docs/sdk/triggers)
+
+### v0.26.5 (September 4, 2023)
+
+#### Source Transaction Id
+
+[1pFdmXngB5A4TXvD1cHEGNVpqdEJBYjXSmSyvy6MQiQ](https://sonar.warp.cc/#/app/source/1pFdmXngB5A4TXvD1cHEGNVpqdEJBYjXSmSyvy6MQiQ)
+
+#### Added Features
+
+- fix temp address bug
 
 ### v0.26.4 (July 3, 2023)
 
@@ -64,7 +256,7 @@ await db.getVersion()
 
 #### Added Features
 
--  [dot notation](/docs/sdk/queries#where)
+- [dot notation](/docs/sdk/queries#where)
 
 ### v0.26.2 (June 12, 2023)
 
@@ -74,7 +266,7 @@ await db.getVersion()
 
 #### Added Features
 
--  [internal writes](/docs/sdk/relayers#internal-writes)
+- [internal writes](/docs/sdk/relayers#internal-writes)
 
 ### v0.26.1 (June 9, 2023)
 
@@ -84,7 +276,7 @@ await db.getVersion()
 
 #### Added Features
 
--  fix a minor index bug
+- fix a minor index bug
 
 ### v0.26.0 (Mar 21, 2023)
 
@@ -94,7 +286,7 @@ await db.getVersion()
 
 #### Added Features
 
--  [bundle query](/docs/sdk/queries#bundle)
+- [bundle query](/docs/sdk/queries#bundle)
 
 ### v0.25.0 (Mar 10, 2023)
 
@@ -104,7 +296,7 @@ await db.getVersion()
 
 #### Added Features
 
--  built-in Lens Profile authentication
+- built-in Lens Profile authentication
 
 ### v0.24.0 (Mar 09, 2023)
 
@@ -305,4 +497,3 @@ await db.getVersion()
 - contract versioning
 - link plugin contracts
 - getAddressLink
-

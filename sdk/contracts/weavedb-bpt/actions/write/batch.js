@@ -31,8 +31,14 @@ const batch = async (
   contractErr = true,
   SmartWeave,
   kvs,
-  executeCron
+  executeCron,
+  depth = 1,
+  type = "direct",
+  get
 ) => {
+  if ((state.bundlers ?? []).length !== 0 && type === "direct") {
+    err("only bundle queries are allowed")
+  }
   let original_signer = null
   if (isNil(signer)) {
     ;({ signer, original_signer } = await validate(
@@ -69,6 +75,9 @@ const batch = async (
       SmartWeave,
       kvs,
       executeCron,
+      depth,
+      type,
+      get,
     ]
     switch (op) {
       case "add":
@@ -80,7 +89,10 @@ const batch = async (
           contractErr,
           SmartWeave,
           kvs,
-          executeCron
+          executeCron,
+          depth,
+          type,
+          get
         )
         break
       case "set":

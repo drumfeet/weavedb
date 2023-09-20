@@ -33,14 +33,21 @@ const relay = async (
   signer,
   contractErr = true,
   SmartWeave,
-  kvs
+  kvs,
+  executeCron,
+  depth = 1,
+  type = "direct",
+  get
 ) => {
+  if ((state.bundlers ?? []).length !== 0 && type === "direct") {
+    err("only bundle queries are allowed")
+  }
   let jobID = head(action.input.query)
   let input = nth(1, action.input.query)
   let query = nth(2, action.input.query)
   let relayer = null
   const relayers = state.relayers || {}
-  if (isNil(relayers[jobID])) err("relayer jobID doesn't exist")
+  if (isNil(relayers[jobID])) err(`relayer jobID [${jobID}] doesn't exist`)
   let original_signer = null
   if (relayers[jobID].internalWrites !== true) {
     if (isNil(signer)) {
@@ -57,8 +64,7 @@ const relay = async (
   } else {
     relayer = action.caller
   }
-
-  if (input.jobID !== jobID) err("the wrong jobID")
+  if (input.jobID !== jobID) err(`jobID mismatch [${input.jobID}|${jobID}]`)
   let action2 = { input, relayer, extra: query, jobID }
   if (!isNil(relayers[jobID].relayers)) {
     const allowed_relayers = map(v => (/^0x.+$/.test(v) ? toLower(v) : v))(
@@ -115,10 +121,33 @@ const relay = async (
       err("relayer data validation error")
     }
   }
-  const params = [state, action2, null, null, SmartWeave, kvs]
+  const params = [
+    state,
+    action2,
+    null,
+    null,
+    SmartWeave,
+    kvs,
+    executeCron,
+    undefined,
+    type,
+    get,
+  ]
   switch (action2.input.function) {
     case "add":
-      return await add(state, action2, null, undefined, null, SmartWeave, kvs)
+      return await add(
+        state,
+        action2,
+        null,
+        undefined,
+        null,
+        SmartWeave,
+        kvs,
+        executeCron,
+        undefined,
+        type,
+        get
+      )
     case "set":
       return await set(...params)
     case "update":
@@ -137,7 +166,11 @@ const relay = async (
         null,
         SmartWeave,
         action2.extra.linkTo,
-        kvs
+        kvs,
+        executeCron,
+        undefined,
+        type,
+        get
       )
     default:
       err(
