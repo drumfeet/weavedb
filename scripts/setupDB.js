@@ -1,7 +1,7 @@
 const { assoc } = require("ramda")
 
 const setupDB = async ({ db, conf, privateKey, relayer }) => {
-  const auth = { privateKey }
+  const auth = typeof privateKey === "object" ? privateKey : { privateKey }
   for (let k in conf) {
     switch (k) {
       case "rules":
@@ -58,6 +58,15 @@ const setupDB = async ({ db, conf, privateKey, relayer }) => {
               (await db.addTrigger(v, col, auth))?.success
             )
           }
+        }
+        break
+      case "crons":
+        for (let name in conf[k]) {
+          console.log(
+            "addCron",
+            name,
+            (await db.addTrigger(conf[k][name], name, auth))?.success
+          )
         }
         break
     }

@@ -7,6 +7,7 @@ const contractType = (process.argv[3] || 1) * 1
 const contractTxIdInternetIdentity = process.argv[4]
 const contractTxIdEthereum = process.argv[5]
 const contractTxIdBundler = process.argv[6]
+const contractTxIdNostr = process.argv[7]
 const { isNil } = require("ramda")
 const { WarpFactory, LoggerFactory } = require("warp-contracts")
 const { DeployPlugin, ArweaveSigner } = require("warp-contracts-plugin-deploy")
@@ -58,13 +59,14 @@ async function deployContract(secure) {
   //initialState.contracts.intmax = contractTxIdIntmax
   initialState.contracts.dfinity = contractTxIdInternetIdentity
   initialState.contracts.ethereum = contractTxIdEthereum
-  if (contractType === 3) initialState.contracts.bundler = contractTxIdBundler
+  if (contractType === 3) {
+    initialState.contracts.bundler = contractTxIdBundler
+    initialState.contracts.nostr = contractTxIdNostr
+  }
   const res = await warp.createContract.deploy({
     wallet: new ArweaveSigner(wallet),
     initState: JSON.stringify(initialState),
-    evaluationManifest: {
-      evaluationOptions: opt,
-    },
+    evaluationManifest: { evaluationOptions: opt },
     src: contractSrc,
   })
   console.log("deployed WeaveDB contract")

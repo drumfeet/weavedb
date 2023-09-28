@@ -15,6 +15,36 @@ await db.getVersion()
 
 ## Change Logs
 
+### v0.31.3-beta (September 28, 2023)
+
+#### Source Transaction Id
+
+[XVGfjnJ21jmmkCSX6ZkphakEqWpCxkC_hp-hIKyr8eI](https://sonar.warp.cc/#/app/source/XVGfjnJ21jmmkCSX6ZkphakEqWpCxkC_hp-hIKyr8eI)
+
+#### Added Features
+
+- Nostr integration
+
+### v0.31.1-beta (September 27, 2023)
+
+#### Source Transaction Id
+
+[KDSOccSqQai2znBunj6K4GOYBXBb2tL9Z50N-oUgWoE](https://sonar.warp.cc/#/app/source/KDSOccSqQai2znBunj6K4GOYBXBb2tL9Z50N-oUgWoE)
+
+#### Added Features
+
+- FPJSON v0.1.5
+
+### v0.30.0-beta (September 26, 2023)
+
+#### Source Transaction Id
+
+[dAmgQfZtgTVoNCpMHgcGlYdb0ab_KvCKwk0hJWD8tbk](https://sonar.warp.cc/#/app/source/dAmgQfZtgTVoNCpMHgcGlYdb0ab_KvCKwk0hJWD8tbk)
+
+#### Added Features
+
+- access control rule 2.0
+
 ### v0.29.2-beta (September 4, 2023)
 
 #### Source Transaction Id
