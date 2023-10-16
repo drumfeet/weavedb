@@ -1,13 +1,6 @@
 const { expect } = require("chai")
 const { mergeLeft, pluck, isNil, compose, map, pick, dissoc } = require("ramda")
-const { fpj, ac_funcs } = require("../sdk/contracts/common/lib/pure")
-const _ii = [
-  "302a300506032b6570032100ccd1d1f725fc35a681d8ef5d563a3c347829bf3f0fe822b4a4b004ee0224fc0d",
-  "010925abb4cf8ccb7accbcfcbf0a6adf1bbdca12644694bb47afc7182a4ade66ccd1d1f725fc35a681d8ef5d563a3c347829bf3f0fe822b4a4b004ee0224fc0d",
-]
-const Account = require("intmax").Account
 const EthCrypto = require("eth-crypto")
-const EthWallet = require("ethereumjs-wallet").default
 const { readFileSync } = require("fs")
 const { resolve } = require("path")
 
@@ -16,9 +9,7 @@ const user2 = EthCrypto.createIdentity()
 const user3 = EthCrypto.createIdentity()
 const users = [user1, user2, user3]
 const a = user => user.address.toLowerCase()
-const p = user => ({
-  privateKey: user.privateKey,
-})
+const p = user => ({ privateKey: user.privateKey })
 
 const tests = {
   "should set rules for jots": async ({ db, owner, relayer }) => {
@@ -108,7 +99,7 @@ const tests = {
       "article",
       art,
       { body: "https://body", cover: "https://cover" },
-      a(relayer)
+      p(relayer)
     )
     expect((await db.get("posts", tx2.docID)).body).to.eql("https://body")
 
@@ -121,7 +112,7 @@ const tests = {
       tx2.docID,
       { ...p(user1), jobID: "article" }
     )
-    await db.relay("article", art2, { body: "https://body2" }, a(relayer))
+    await db.relay("article", art2, { body: "https://body2" }, p(relayer))
     expect((await db.get("posts", tx2.docID)).title).to.eql("edit-6")
 
     await db.query("update:del_post", {}, "posts", tx2.docID, p(user1))

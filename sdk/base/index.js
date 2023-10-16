@@ -56,6 +56,7 @@ const is_data = [
 const no_paths = [
   "nonce",
   "ids",
+  "validities",
   "getCrons",
   "getAlgorithms",
   "getLinkedContract",
@@ -148,6 +149,7 @@ class Base {
       "getSchema",
       "getRules",
       "getIds",
+      "getValidities",
       "getOwner",
       "getAddressLink",
       "getAlgorithms",
@@ -173,6 +175,10 @@ class Base {
 
   ts() {
     return { __op: "ts" }
+  }
+
+  ms() {
+    return { __op: "ms" }
   }
 
   del() {
@@ -232,8 +238,28 @@ class Base {
     )
   }
 
+  async getValidities(tx, nocache) {
+    return this.read(
+      {
+        function: "validities",
+        tx,
+      },
+      nocache
+    )
+  }
+
   async bundle(queries, opt) {
-    const input = JSON.stringify(queries)
+    let input = null
+    if (!isNil(opt?.t)) {
+      if (opt.t.length !== queries.length) {
+        throw new Error("timestamp length is different from query length")
+      }
+      if (!is(Number, opt.n)) throw new Error("height not specified")
+      if (!is(String, opt.h)) throw new Error("hash not specified")
+      input = JSON.stringify({ q: queries, t: opt.t, h: opt.h, n: opt.n })
+    } else {
+      input = JSON.stringify(queries)
+    }
     const output = pako.deflate(input)
     const base64 = btoa(String.fromCharCode.apply(null, output))
     return this._write2("bundle", base64, opt)
@@ -310,7 +336,8 @@ class Base {
       multisigs,
       linkedAccount,
       noauth,
-      data
+      data,
+      parallel
     if (!isNil(opt)) {
       ;({
         jobID,
@@ -329,6 +356,7 @@ class Base {
         linkedAccount,
         noauth,
         data,
+        parallel,
       } = opt)
     }
     if (!isNil(linkedAccount)) wallet = linkedAccount
@@ -347,6 +375,7 @@ class Base {
       multisigs,
       onDryWrite,
       data,
+      parallel,
     ]
     if (
       ((func === "nostr" || func === "bundle") && this.type === 3) ||
@@ -363,7 +392,8 @@ class Base {
         jobID,
         multisigs,
         onDryWrite,
-        data
+        data,
+        parallel
       )
     } else if (
       isNil(intmax) &&
@@ -407,7 +437,8 @@ class Base {
           jobID,
           multisigs,
           onDryWrite,
-          data
+          data,
+          parallel
         )
   }
 
@@ -782,7 +813,8 @@ class Base {
     jobID,
     multisigs,
     onDryWrite,
-    __data__
+    __data__,
+    parallel
   ) {
     let signer, caller, pkey
     if (!isNil(privateKey)) {
@@ -846,7 +878,15 @@ class Base {
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
     bundle ||= this.network === "mainnet"
-    return await this.write(func, param, dryWrite, bundle, relay, onDryWrite)
+    return await this.write(
+      func,
+      param,
+      dryWrite,
+      bundle,
+      relay,
+      onDryWrite,
+      parallel
+    )
   }
 
   async writeWithII(
@@ -861,7 +901,8 @@ class Base {
     jobID,
     multisigs,
     onDryWrite,
-    __data__
+    __data__,
+    parallel
   ) {
     let addr = ii.toJSON()[0]
     const isaddr = !isNil(addr)
@@ -904,7 +945,15 @@ class Base {
     if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
-    return await this.write(func, param, dryWrite, bundle, relay, onDryWrite)
+    return await this.write(
+      func,
+      param,
+      dryWrite,
+      bundle,
+      relay,
+      onDryWrite,
+      parallel
+    )
   }
 
   async writeWithAR(
@@ -919,7 +968,8 @@ class Base {
     jobID,
     multisigs,
     onDryWrite,
-    __data__
+    __data__,
+    parallel
   ) {
     const wallet = is(Object, ar) && ar.walletName === "ArConnect" ? ar : null
     let addr = null
@@ -973,7 +1023,15 @@ class Base {
     if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
-    return await this.write(func, param, dryWrite, bundle, relay, onDryWrite)
+    return await this.write(
+      func,
+      param,
+      dryWrite,
+      bundle,
+      relay,
+      onDryWrite,
+      parallel
+    )
   }
 
   async writeWithIntmax(
@@ -988,7 +1046,8 @@ class Base {
     jobID,
     multisigs,
     onDryWrite,
-    __data__
+    __data__,
+    parallel
   ) {
     const wallet = is(Object, intmax) ? intmax : null
     let addr = null
@@ -1057,7 +1116,15 @@ class Base {
     if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
-    return await this.write(func, param, dryWrite, bundle, relay, onDryWrite)
+    return await this.write(
+      func,
+      param,
+      dryWrite,
+      bundle,
+      relay,
+      onDryWrite,
+      parallel
+    )
   }
 
   parseQuery(func, query) {
@@ -1162,14 +1229,23 @@ class Base {
     jobID,
     multisigs,
     onDryWrite,
-    __data__
+    __data__,
+    parallel
   ) {
     const param = mergeLeft(extra, { function: func, query })
     if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
     bundle ||= this.network === "mainnet"
-    return await this.write(func, param, dryWrite, bundle, relay, onDryWrite)
+    return await this.write(
+      func,
+      param,
+      dryWrite,
+      bundle,
+      relay,
+      onDryWrite,
+      parallel
+    )
   }
 }
 

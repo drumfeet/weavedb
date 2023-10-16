@@ -22,6 +22,7 @@ const {
   tail,
   clone,
 } = require("ramda")
+
 const {
   WarpFactory,
   LoggerFactory,
@@ -47,8 +48,7 @@ let submap = {}
 
 let Arweave = require("arweave")
 Arweave = isNil(Arweave.default) ? Arweave : Arweave.default
-//const Base = require("weavedb-base")
-const Base = require("../base")
+const Base = require("weavedb-base")
 const { handle } = require("weavedb-contracts/weavedb/contract")
 const { handle: handle_kv } = require("weavedb-contracts/weavedb-kv/contract")
 const { handle: handle_bpt } = require("weavedb-contracts/weavedb-bpt/contract")
@@ -575,10 +575,30 @@ class SDK extends Base {
     }
     return res.result
   }
-
-  async write(func, param, dryWrite, bundle, relay = false, onDryWrite) {
+  async writeParallel(param, parallel) {
+    let tx = null
+    let err = null
+    let start = Date.now()
+    let originalTxId = null
+    try {
+      tx = await this.db["bundleInteraction"](param, {})
+    } catch (e) {
+      err = e
+      console.log(e)
+    }
+    return { tx, err, duration: Date.now() - start }
+  }
+  async write(
+    func,
+    param,
+    dryWrite,
+    bundle,
+    relay = false,
+    onDryWrite,
+    parallel
+  ) {
     delete param.data
-    if (JSON.stringify(param).length > 3900) {
+    if (JSON.stringify(param).length > 2500) {
       return {
         nonce: param.nonce,
         signer: param.caller,
@@ -592,10 +612,11 @@ class SDK extends Base {
         results: [],
       }
     }
-    let cache = !isNil(onDryWrite?.cache)
-      ? onDryWrite.cache
-      : !this.nocache_default
+    if (!isNil(parallel)) return await this.writeParallel(param, parallel)
     return new Promise(async (_res, rej) => {
+      let cache = !isNil(onDryWrite?.cache)
+        ? onDryWrite.cache
+        : !this.nocache_default
       if (relay) {
         _res(param)
       } else {

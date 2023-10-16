@@ -1,15 +1,14 @@
 const { tail, isNil, clone, mergeLeft } = require("ramda")
-const base = "weavedb-contracts"
-const { handle } = require(`${base}/weavedb/contract`)
-const { handle: handle_kv } = require(`${base}/weavedb-kv/contract`)
-const { handle: handle_bpt } = require(`${base}/weavedb-bpt/contract`)
-const version = require(`${base}/weavedb/lib/version`)
-const version_kv = require(`${base}/weavedb-kv/lib/version`)
-const version_bpt = require(`${base}/weavedb-bpt/lib/version`)
+const contracts = "weavedb-contracts"
+const { handle } = require(`${contracts}/weavedb/contract`)
+const { handle: handle_kv } = require(`${contracts}/weavedb-kv/contract`)
+const { handle: handle_bpt } = require(`${contracts}/weavedb-bpt/contract`)
+const version = require(`${contracts}/weavedb/lib/version`)
+const version_kv = require(`${contracts}/weavedb-kv/lib/version`)
+const version_bpt = require(`${contracts}/weavedb-bpt/lib/version`)
 const Base = require("weavedb-base")
 let arweave = require("arweave")
 if (!isNil(arweave.default)) arweave = arweave.default
-const md5 = require("md5")
 
 class OffChain extends Base {
   constructor({
@@ -97,7 +96,6 @@ class OffChain extends Base {
               algorithms: ["secp256k1", "secp256k1-2", "ed25519", "rsa256"],
               name: "weavedb",
               version: "1",
-              links: {},
             },
             crons: {
               lastExecuted: 0,
@@ -120,12 +118,20 @@ class OffChain extends Base {
     if (typeof this.cache === "object") await this.cache.initialize(this)
   }
 
-  getTxId(input) {
-    return md5(JSON.stringify({ contractTxId: this.contractTxId, input }))
+  async getTxId(input, date) {
+    const str = JSON.stringify({
+      contractTxId: this.contractTxId,
+      input,
+      timestamp: date,
+    })
+    return arweave.utils.bufferTob64Url(
+      await arweave.crypto.hash(arweave.utils.stringToBuffer(str))
+    )
   }
 
-  getSW(input) {
+  async getSW(input, date) {
     let kvs = {}
+    date ??= Date.now()
     return {
       kv: {
         get: async key =>
@@ -139,10 +145,10 @@ class OffChain extends Base {
       contract: { id: this.contractTxId },
       arweave,
       block: {
-        timestamp: Math.round(Date.now() / 1000),
+        timestamp: Math.round(date / 1000),
         height: ++this.height,
       },
-      transaction: { id: this.getTxId(input) },
+      transaction: { id: await this.getTxId(input, date), timestamp: date },
       contracts: {
         viewContractState: async (contract, param, SmartWeave) => {
           const { handle } = require(`weavedb-contracts/${contract}/contract`)
@@ -156,19 +162,28 @@ class OffChain extends Base {
     }
   }
 
-  async read(input) {
-    return (await this.handle(clone(this.state), { input }, this.getSW(input)))
-      .result
+  async read(input, date) {
+    return (
+      await this.handle(
+        clone(this.state),
+        { input },
+        await this.getSW(input, date)
+      )
+    ).result
   }
 
-  async dryRead(state, queries) {
+  async dryRead(state, queries, date) {
     let results = []
     for (const v of queries || []) {
       let res = { success: false, err: null, result: null }
       const input = { function: v[0], query: tail(v) }
       try {
         res.result = (
-          await this.handle(clone(state), { input }, this.getSW(input))
+          await this.handle(
+            clone(state),
+            { input },
+            await this.getSW(input, date)
+          )
         ).result
         res.success = true
       } catch (e) {
@@ -179,7 +194,7 @@ class OffChain extends Base {
     return results
   }
 
-  async write(func, param, dryWrite, bundle, relay = false, onDryWrite) {
+  async write(func, param, dryWrite, bundle, relay = false, onDryWrite, date) {
     if (JSON.stringify(param).length > 3900) {
       return {
         nonce: param.nonce,
@@ -199,7 +214,7 @@ class OffChain extends Base {
     } else {
       let error = null
       let tx = null
-      let sw = this.getSW(param)
+      let sw = await this.getSW(param, date)
       try {
         tx = await this.handle(
           clone(this.state),
@@ -227,7 +242,7 @@ class OffChain extends Base {
       let results = []
       if (error === null) {
         if (!isNil(onDryWrite?.read)) {
-          results = await this.dryRead(this.state, onDryWrite.read || [])
+          results = await this.dryRead(this.state, onDryWrite.read || [], date)
         }
       }
       let res = {

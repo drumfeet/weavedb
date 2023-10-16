@@ -18,11 +18,26 @@ const { fpj, clone, replace$ } = require("./pure")
 
 const executeCron =
   ops =>
-  async (cron, state, SmartWeave, kvs, depth = 1, _vars = { batch: [] }) => {
+  async (
+    cron,
+    state,
+    SmartWeave,
+    kvs,
+    depth = 1,
+    _vars = { batch: [] },
+    timestamp = null
+  ) => {
     let vars = mergeLeft(_vars, {
       block: {
         height: SmartWeave.block.height,
         timestamp: SmartWeave.block.timestamp,
+      },
+      transaction: {
+        id: SmartWeave.transaction.id,
+        timestamp:
+          timestamp ??
+          SmartWeave.transaction.timestamp ??
+          SmartWeave.block.timestamp * 1000,
       },
     })
     const parse = query => {
@@ -44,6 +59,7 @@ const executeCron =
         {
           caller: state.owner,
           input: { function: op, query: await parse(replace$(query)) },
+          timestamp,
         },
         true,
       ]
@@ -51,7 +67,7 @@ const executeCron =
       params.push(false)
       params.push(SmartWeave)
       params.push(kvs)
-      params.push(executeCron)
+      params.push(executeCron(ops))
       params.push(depth + 1)
       params.push("cron")
       params.push(ops.get)
@@ -169,7 +185,7 @@ const executeCron =
 
 const cron =
   ops =>
-  async (state, SmartWeave, _kvs = {}) => {
+  async (state, SmartWeave, _kvs = {}, timestamp) => {
     const now = SmartWeave.block.timestamp
     if (isNil(state.crons)) {
       state.crons = { lastExecuted: now, crons: {} }
@@ -194,7 +210,7 @@ const cron =
     for (let cron of crons) {
       try {
         let kvs = { batch: [] }
-        await executeCron(ops)(cron, _state, SmartWeave, kvs)
+        await executeCron(ops)(cron, _state, SmartWeave, kvs, timestamp)
         for (const k in kvs) _kvs[k] = kvs[k]
       } catch (e) {
         console.log(e)

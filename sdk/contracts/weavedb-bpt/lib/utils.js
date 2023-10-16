@@ -42,6 +42,7 @@ const {
   clone,
   isValidName,
   setElm,
+  parse: __parse,
 } = require("../../common/lib/pure")
 const { validate: validator } = require("../../common/lib/jsonschema")
 const { get: _get } = require("./index")
@@ -140,6 +141,10 @@ const validateData = async ({
           },
           transaction: {
             id: SmartWeave.transaction.id,
+            timestamp:
+              action.timestamp ??
+              SmartWeave.transaction.timestamp ??
+              SmartWeave.block.timestamp * 1000,
           },
           resource: { data: new_data },
           id: last(path),
@@ -156,6 +161,7 @@ const validateData = async ({
       rule_data.signer = rule_data.request.auth.signer
       rule_data.id = rule_data.request.id
       rule_data.ts = rule_data.request.block.timestamp
+      rule_data.ms = rule_data.request.transaction.timestamp
       rule_data.new = rule_data.resource.newData
       rule_data.old = rule_data.resource.data
       rule_data.req = rule_data.request.resource.data
@@ -247,7 +253,7 @@ const validateData = async ({
                         {
                           input: {
                             function: "get",
-                            query: _parse(logic[1], rule_data),
+                            query: __parse(logic[1], rule_data),
                           },
                         },
                         undefined,
@@ -377,7 +383,8 @@ const _getDoc = async (
         extra,
         true,
         _signer,
-        SmartWeave
+        SmartWeave,
+        action
       ).__data
     } else if (includes(func)(["update", "upsert"])) {
       next_data = mergeData(
@@ -386,7 +393,8 @@ const _getDoc = async (
         extra,
         false,
         _signer,
-        SmartWeave
+        SmartWeave,
+        action
       ).__data
     }
   }
@@ -489,7 +497,8 @@ const trigger = async (
   kvs,
   executeCron,
   depth,
-  vars
+  vars,
+  timestamp
 ) => {
   const trigger_key = `trigger.${init(path).join("/")}`
   state.triggers ??= {}
@@ -500,12 +509,13 @@ const trigger = async (
       let _state = clone(state)
       let _kvs = clone(kvs)
       await executeCron(
-        { crons: { jobs: t.func, version: t.version } },
+        { crons: { jobs: t.func, version: t.version, key: t.key } },
         _state,
         SmartWeave,
         _kvs,
         depth,
-        { ...vars, batch: [] }
+        { ...vars, batch: [] },
+        timestamp
       )
       state = _state
       for (const k in _kvs) kvs[k] = _kvs[k]
@@ -1016,6 +1026,148 @@ const parseQuery = query => {
   return parsed
 }
 
+const auth = async (
+  state,
+  action,
+  func,
+  SmartWeave,
+  use_nonce = true,
+  kvs,
+  fn
+) => {
+  if (isNil(state.auth)) return { signer: null, original_signer: null }
+  const {
+    query,
+    nonce,
+    signature,
+    caller,
+    type = "secp256k1",
+    pubKey,
+  } = action.input
+  if (
+    !includes(type)(
+      state.auth.algorithms || ["secp256k1", "secp256k1-2", "ed25519", "rsa256"]
+    )
+  ) {
+    err(`The wrong algorithm`)
+  }
+  let _caller = caller
+  const EIP712Domain = [
+    { name: "name", type: "string" },
+    { name: "version", type: "string" },
+    { name: "verifyingContract", type: "string" },
+  ]
+  const domain = {
+    name: state.auth.name,
+    version: state.auth.version,
+    verifyingContract: isNil(SmartWeave.contract)
+      ? "exm"
+      : SmartWeave.contract.id,
+  }
+
+  const message = {
+    nonce,
+    query: JSON.stringify({ func, query }),
+  }
+
+  const _data = {
+    types: {
+      EIP712Domain,
+      Query: [
+        { name: "query", type: "string" },
+        { name: "nonce", type: "uint256" },
+      ],
+    },
+    domain,
+    primaryType: "Query",
+    message,
+  }
+  let signer = null
+  if (type === "ed25519") {
+    const { isValid } = await read(
+      state.contracts.dfinity,
+      {
+        function: "verify",
+        data: _data,
+        signature,
+        signer: caller,
+      },
+      SmartWeave
+    )
+    if (isValid) {
+      signer = caller
+    } else {
+      err(`The wrong signature`)
+    }
+  } else if (type === "rsa256") {
+    let encoded_data = JSON.stringify(_data)
+    if (typeof TextEncoder !== "undefined") {
+      const enc = new TextEncoder()
+      encoded_data = enc.encode(encoded_data)
+    }
+    const _crypto =
+      SmartWeave.arweave.crypto || SmartWeave.arweave.wallets.crypto
+    const isValid = await _crypto.verify(
+      pubKey,
+      encoded_data,
+      Buffer.from(signature, "hex")
+    )
+    if (isValid) {
+      signer = caller
+    } else {
+      err(`The wrong signature`)
+    }
+  } else if (type == "secp256k1") {
+    signer = (
+      await read(
+        state.contracts.ethereum,
+        {
+          function: "verify712",
+          data: _data,
+          signature,
+        },
+        SmartWeave
+      )
+    ).signer
+  } else if (type == "secp256k1-2") {
+    signer = (
+      await read(
+        state.contracts.ethereum,
+        {
+          function: "verify",
+          data: _data,
+          signature,
+        },
+        SmartWeave
+      )
+    ).signer
+  }
+
+  if (includes(type)(["secp256k1", "secp256k1-2"])) {
+    if (/^0x/.test(signer)) signer = signer.toLowerCase()
+    if (/^0x/.test(_caller)) _caller = _caller.toLowerCase()
+  }
+  const timestamp = isNil(action.timestamp)
+    ? isNil(SmartWeave.transaction.timestamp)
+      ? Math.round(SmartWeave.transaction.timestamp)
+      : SmartWeave.block.timestamp
+    : Math.round(action.timestamp / 1000)
+  let original_signer = signer
+  let _signer = signer
+  if (_signer !== _caller) {
+    const link = state.auth.links[_signer]
+    if (!isNil(link)) {
+      let _address = is(Object, link) ? link.address : link
+      let _expiry = is(Object, link) ? link.expiry || 0 : 0
+      if (_expiry === 0 || timestamp <= _expiry) _signer = _address
+    }
+  }
+  if (_signer !== _caller) err(`signer[${_signer}] is not caller[${_caller}]`)
+  if (use_nonce !== false)
+    await fn.useNonce(nonce, original_signer, state, kvs, SmartWeave)
+  return { signer: _signer, original_signer }
+}
+
 module.exports = {
   trigger,
   getDoc: _getDoc,
@@ -1024,4 +1176,5 @@ module.exports = {
   kv,
   parseQuery,
   err,
+  auth,
 }

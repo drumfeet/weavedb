@@ -7,15 +7,16 @@ const {
 } = require("../common/actions/read/getLinkedContract")
 
 const { getOwner } = require("../common/actions/read/getOwner")
-const { getAddressLink } = require("../common/actions/read/getAddressLink")
 const { getRelayerJob } = require("../common/actions/read/getRelayerJob")
 const { listRelayerJobs } = require("../common/actions/read/listRelayerJobs")
 const { getEvolve } = require("../common/actions/read/getEvolve")
-const { getInfo } = require("../common/actions/read/getInfo")
 const { getTriggers } = require("../common/actions/read/getTriggers")
 const { getBundlers } = require("./actions/read/getBundlers")
 
+const { getInfo } = require("./actions/read/getInfo")
+const { getAddressLink } = require("./actions/read/getAddressLink")
 const { ids } = require("./actions/read/ids")
+const { validities } = require("./actions/read/validities")
 const { nonce } = require("./actions/read/nonce")
 const { version } = require("./actions/read/version")
 const { get } = require("./actions/read/get")
@@ -121,6 +122,7 @@ async function handle(state, action, _SmartWeave) {
   let count = 0
   try {
     let _kvs = {}
+    // TODO: rollup cron will have trouble with timestamp
     ;({ state, count } = await cron(state, _SmartWeave, _kvs))
     kvs = _kvs
   } catch (e) {
@@ -171,6 +173,9 @@ async function handle(state, action, _SmartWeave) {
       return await getRules(...readParams)
     case "ids":
       return await ids(...readParams)
+    case "validities":
+      return await validities(...readParams)
+
     case "nonce":
       return await nonce(...readParams)
     case "hash":

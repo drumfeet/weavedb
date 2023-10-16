@@ -15,7 +15,99 @@ await db.getVersion()
 
 ## Change Logs
 
-### v0.31.3-beta (September 28, 2023)
+### v0.37.2-beta (October 16, 2023)
+
+#### Source Transaction Id
+
+[Ohr4AU6jRUCLoNSTTqu3bZ8GulKZ0V8gUm-vwrRbmS4](https://sonar.warp.cc/#/app/source/Ohr4AU6jRUCLoNSTTqu3bZ8GulKZ0V8gUm-vwrRbmS4)
+
+#### Added Features
+
+- fix minor issues
+
+### v0.37.1-beta (October 13, 2023)
+
+#### Source Transaction Id
+
+[v7ltiorPqRdU8W5XF5jJNbD4Reh39lF8dPa9fGyrhnc](https://sonar.warp.cc/#/app/source/v7ltiorPqRdU8W5XF5jJNbD4Reh39lF8dPa9fGyrhnc)
+
+#### Added Features
+
+- fix rule validation
+
+### v0.37.0-beta (October 12, 2023)
+
+#### Source Transaction Id
+
+[t4PARZFDKuAmAOk7dBRmsBoYliPbenhdxhsYDPTk2rw](https://sonar.warp.cc/#/app/source/t4PARZFDKuAmAOk7dBRmsBoYliPbenhdxhsYDPTk2rw)
+
+#### Added Features
+
+- setRules with key
+
+### v0.36.0-beta (October 11, 2023)
+
+#### Source Transaction Id
+
+[eGWmP5DgNJJbKYjwfTw3sHjb3kdTyLxD8hc5XWH8gWM](https://sonar.warp.cc/#/app/source/eGWmP5DgNJJbKYjwfTw3sHjb3kdTyLxD8hc5XWH8gWM)
+
+#### Added Features
+
+- better validities
+
+### v0.35.0-beta (October 8, 2023)
+
+#### Source Transaction Id
+
+[jgciKufvJxAySTfMfG-lTAexMLooU28ROj4XQ_WVEeA](https://sonar.warp.cc/#/app/source/jgciKufvJxAySTfMfG-lTAexMLooU28ROj4XQ_WVEeA)
+
+#### Added Features
+
+- return hash, bundleHeight, bundleHash with `getInfo()`
+
+### v0.34.0-beta (October 8, 2023)
+
+#### Source Transaction Id
+
+[CyItU3obRM_ehbygFYu8I4U_aQ-OWJI7XKFGi7rYEUE](https://sonar.warp.cc/#/app/source/CyItU3obRM_ehbygFYu8I4U_aQ-OWJI7XKFGi7rYEUE)
+
+#### Added Features
+
+- rollup bundles in random order
+
+### v0.33.0-beta (October 6, 2023)
+
+#### Source Transaction Id
+
+[2XvPr6h8i3Tokf6v5vMOeUR_f28RM8bUSI-x5c-Qu4Y](https://sonar.warp.cc/#/app/source/2XvPr6h8i3Tokf6v5vMOeUR_f28RM8bUSI-x5c-Qu4Y)
+
+#### Added Features
+
+- move address links to kvs
+- bundle height
+
+### v0.32.0-beta (October 5, 2023)
+
+#### Source Transaction Id
+
+[6z03DkIxmMYtjpSPnXX-6A5f7QsO3gnLsqkQObRiK00](https://sonar.warp.cc/#/app/source/6z03DkIxmMYtjpSPnXX-6A5f7QsO3gnLsqkQObRiK00)
+
+#### Added Features
+
+- getValidities
+- db.ms() for rollup transaction timestamp in millisecond
+
+### v0.31.0-beta (September 29, 2023)
+
+#### Source Transaction Id
+
+[GYLsyTsZK1Iay4EEKDzejddNM-KBVFBkA40lDY3eJx8](https://sonar.warp.cc/#/app/source/GYLsyTsZK1Iay4EEKDzejddNM-KBVFBkA40lDY3eJx8)
+
+#### Added Features
+
+- Fix nexted triggers
+
+### v0.30.3-beta (September 28, 2023)
 
 #### Source Transaction Id
 
@@ -25,7 +117,7 @@ await db.getVersion()
 
 - Nostr integration
 
-### v0.31.1-beta (September 27, 2023)
+### v0.30.1-beta (September 27, 2023)
 
 #### Source Transaction Id
 
