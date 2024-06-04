@@ -1,8 +1,9 @@
 let fpjson = require("fpjson-lang")
 fpjson = fpjson.default || fpjson
-const jsonLogic = require("json-logic-js")
 const md5 = require("./md5")
 const {
+  of,
+  mergeLeft,
   keys,
   symmetricDifference,
   uniq,
@@ -32,23 +33,318 @@ const {
   without,
 } = require("ramda")
 const {
-  read,
-  parse: _parse,
-  err,
-  genId,
-  getField,
-  mergeDataP,
-} = require("../../common/lib/utils")
-const {
   fpj,
   ac_funcs,
   clone,
   isValidName,
+  isValidDocName,
   setElm,
   parse: __parse,
-} = require("../../common/lib/pure")
-const { validate: validator } = require("../../common/lib/jsonschema")
+} = require("./pure")
+const fn = require("./fn")
 const { get: _get } = require("./index")
+const { validate } = require("./jsonschema")
+const { err, read } = require("./base")
+
+const isEvolving = state =>
+  !isNil(state.evolveHistory) &&
+  !isNil(last(state.evolveHistory)) &&
+  isNil(last(state.evolveHistory).newVersion)
+
+const getField = (data, path) => {
+  if (path.length === 1) {
+    return [path[0], data]
+  } else {
+    if (isNil(data[path[0]])) data[path[0]] = {}
+    return getField(data[path[0]], tail(path))
+  }
+}
+const genId = async (action, salt, SmartWeave) => {
+  const id = md5(
+    JSON.stringify({
+      input: action.input,
+      txid: SmartWeave.transaction?.id ?? SmartWeave.block?.height,
+      timestamp:
+        SmartWeave.transaction?.timestamp ?? SmartWeave.block?.timestamp,
+    }),
+  )
+  return Buffer.from(id, "hex")
+    .toString("base64")
+    .replace(/\//g, "_")
+    .replace(/\+/g, "-")
+}
+
+const mergeDataP = async (
+  _data,
+  new_data,
+  extra = {},
+  overwrite = false,
+  signer,
+  SmartWeave,
+  action,
+  state,
+) => {
+  let exists = true
+  if (isNil(_data.__data) || overwrite) {
+    _data.__data = {}
+    exists = false
+  }
+  for (let k in new_data) {
+    const path = exists ? k.split(".") : [k]
+    const [field, obj] = getField(_data.__data, path)
+    const d = new_data[k]
+    if (is(Object)(d) && d.__op === "zkp") {
+      const res = await read(
+        state.contracts.polygonID,
+        {
+          function: "verify",
+          proof: d.proof,
+          pub_signals: d.pub_signals,
+        },
+        SmartWeave,
+      )
+      obj[field] = res
+    } else if (is(Object)(d) && d.__op === "data") {
+      obj[field] = extra[d.key] ?? null
+    } else if (is(Object)(d) && d.__op === "arrayUnion") {
+      if (complement(is)(Array, d.arr)) err()
+      if (complement(is)(Array, obj[field])) obj[field] = []
+      obj[field] = concat(obj[field], d.arr)
+    } else if (is(Object)(d) && d.__op === "arrayRemove") {
+      if (complement(is)(Array, d.arr)) err()
+      if (complement(is)(Array, obj[field])) obj[field] = []
+      obj[field] = without(d.arr, obj[field])
+    } else if (is(Object)(d) && d.__op === "inc") {
+      if (isNaN(d.n)) err()
+      if (isNil(obj[field])) obj[field] = 0
+      obj[field] += d.n
+    } else if (is(Object)(d) && d.__op === "del") {
+      delete obj[field]
+    } else if (is(Object)(d) && d.__op === "ts") {
+      obj[field] = SmartWeave.block.timestamp
+    } else if (is(Object)(d) && d.__op === "ms") {
+      obj[field] = action.timestamp ?? SmartWeave.block.timestamp * 1000
+    } else if (is(Object)(d) && d.__op === "signer") {
+      obj[field] = signer
+    } else {
+      obj[field] = d
+    }
+  }
+  return _data
+}
+
+const mergeData = (
+  _data,
+  new_data,
+  extra = {},
+  overwrite = false,
+  signer,
+  SmartWeave,
+  action,
+) => {
+  let exists = true
+  if (isNil(_data.__data) || overwrite) {
+    _data.__data = {}
+    exists = false
+  }
+  for (let k in new_data) {
+    const path = exists ? k.split(".") : [k]
+    const [field, obj] = getField(_data.__data, path)
+    const d = new_data[k]
+    if (is(Object)(d) && d.__op === "data") {
+      obj[field] = extra[d.key] ?? null
+    } else if (is(Object)(d) && d.__op === "arrayUnion") {
+      if (complement(is)(Array, d.arr)) err()
+      if (complement(is)(Array, obj[field])) obj[field] = []
+      obj[field] = concat(obj[field], d.arr)
+    } else if (is(Object)(d) && d.__op === "arrayRemove") {
+      if (complement(is)(Array, d.arr)) err()
+      if (complement(is)(Array, obj[field])) obj[field] = []
+      obj[field] = without(d.arr, obj[field])
+    } else if (is(Object)(d) && d.__op === "inc") {
+      if (isNaN(d.n)) err()
+      if (isNil(obj[field])) obj[field] = 0
+      obj[field] += d.n
+    } else if (is(Object)(d) && d.__op === "del") {
+      delete obj[field]
+    } else if (is(Object)(d) && d.__op === "ts") {
+      obj[field] = SmartWeave.block.timestamp
+    } else if (is(Object)(d) && d.__op === "ms") {
+      obj[field] = action.timestamp ?? SmartWeave.block.timestamp * 1000
+    } else if (is(Object)(d) && d.__op === "signer") {
+      obj[field] = signer
+    } else {
+      obj[field] = d
+    }
+  }
+  return _data
+}
+
+const _parse = async (
+  state,
+  action,
+  _func,
+  signer,
+  salt,
+  contractErr = true,
+  SmartWeave,
+  kvs,
+  type,
+  fn,
+) => {
+  let func
+  if (!isNil(_func)) func = _func.split(":")[0]
+  const { data } = state
+  const { query } = action.input
+  const { relayer, jobID, extra } = action
+  let new_data = null
+  let path = null
+  let col
+  if (
+    includes(func)([
+      "delete",
+      "getSchema",
+      "getRules",
+      "getAlgorithms",
+      "removeRelayerJob",
+      "getRelayerJob",
+      "listCollections",
+    ])
+  ) {
+    path = query
+  } else {
+    ;[new_data, ...path] = query
+    if (func === "add") {
+      const id = await genId(action, salt, SmartWeave)
+      path.push(id)
+      await fn.addNewDoc(id, SmartWeave, state, kvs)
+    } else if (
+      includes(func)(["setRules", "addTrigger"]) &&
+      query.length % 2 === 1
+    ) {
+      path = init(path)
+    }
+  }
+  if (
+    (isNil(new_data) &&
+      !includes(func)([
+        "listCollections",
+        "delete",
+        "getSchema",
+        "getRules",
+        "getAlgorithms",
+        "getRelayerJob",
+        "removeRelayerJob",
+        "getRelayerJob",
+      ])) ||
+    (path.length === 0 &&
+      !includes(func)(["setAlgorithms", "listCollections"])) ||
+    (path.length % 2 !== 0 &&
+      !includes(func)([
+        "addRelayerJob",
+        "removeRelayerJob",
+        "getRelayerJob",
+        "addIndex",
+        "addTrigger",
+        "removeTrigger",
+        "removeIndex",
+        "setSchema",
+        "getSchema",
+        "getAlgorithms",
+        "setRules",
+        "getRules",
+        "linkContract",
+        "unlinkContract",
+      ]))
+  ) {
+    err(`the wrong query length[${query.length}] for ${func}`, contractErr)
+  }
+  let _data = null
+  let schema = null
+  let rules = null
+  let next_data
+  if (
+    includes(func)([
+      "addIndex",
+      "addTrigger",
+      "removeTrigger",
+      "removeIndex",
+      "setSchema",
+      "getSchema",
+      "setRules",
+      "getRules",
+    ])
+  ) {
+    _data = await fn.getCol(
+      data,
+      path,
+      signer,
+      SmartWeave,
+      undefined,
+      kvs,
+      state,
+    )
+    col = _data
+  } else if (
+    !includes(func)([
+      "setAlgorithms",
+      "addRelayerJob",
+      "removeRelayerJob",
+      "getAlgorithms",
+      "linkContract",
+      "unlinkContract",
+    ]) &&
+    path.length !== 0
+  ) {
+    const doc = await fn.getDoc(
+      data,
+      path,
+      signer,
+      func,
+      new_data,
+      state.secure,
+      relayer,
+      jobID,
+      extra,
+      state,
+      action,
+      SmartWeave,
+      undefined,
+      kvs,
+      fn.get,
+      type,
+      _func,
+    )
+    _data = doc.doc
+    ;({ next_data, schema, rules, col } = doc)
+  }
+  let owner = state.owner || []
+  if (is(String)(owner)) owner = of(owner)
+  if (
+    !isNil(state.auth) &&
+    includes(func)([
+      "addRelayerJob",
+      "removeRelayerJob",
+      "addIndex",
+      "addTrigger",
+      "removeTrigger",
+      "removeIndex",
+      "setSchema",
+      "setAlgorithms",
+      "setRules",
+      "unlinkContract",
+      "linkContract",
+      "unlinkContract",
+    ]) &&
+    !includes(signer)(owner)
+  ) {
+    err(
+      `caller[${signer}] is not contract owner[${owner.join(", ")}]`,
+      contractErr,
+    )
+  }
+  return { data, query, new_data, path, _data, schema, col, next_data }
+}
 
 const getCol = async (
   data,
@@ -56,18 +352,26 @@ const getCol = async (
   _signer,
   SmartWeave,
   current_path = [],
-  kvs
-) => await _getCol(path, _signer, SmartWeave, (current_path = []), kvs)
+  kvs,
+  state,
+) => await _getCol(path, _signer, SmartWeave, (current_path = []), kvs, state)
 
-const _getCol = async (path, _signer, SmartWeave, current_path = [], kvs) => {
+const _getCol = async (
+  path,
+  _signer,
+  SmartWeave,
+  current_path = [],
+  kvs,
+  state,
+) => {
   const [col, id] = path
-  if (!isValidName(col)) err(`collection id is not valid: ${col}`)
+  if (!isValidName(col, state)) err(`collection id is not valid: ${col}`)
   let key = `data.${append(col)(current_path).join("/")}`
   let data =
     (await kv(kvs, SmartWeave).get(`data.${current_path.join("/")}`)) ?? {}
+
   if (isNil(data[col])) {
-    data[col] = true
-    await kv(kvs, SmartWeave).put(`data.${current_path.join("/")}`, data)
+    await addNewCol(col, current_path, data, kvs, state, SmartWeave)
   }
   let _data = await kv(kvs, SmartWeave).get(key)
   if (isNil(_data)) {
@@ -77,7 +381,7 @@ const _getCol = async (path, _signer, SmartWeave, current_path = [], kvs) => {
   if (isNil(id)) {
     return _data
   } else {
-    if (!isValidName(id)) err(`doc id is not valid: ${id}`)
+    if (!isValidDocName(id, state)) err(`doc id is not valid: ${id}`)
     current_path.push(col)
     current_path.push(id)
     return await _getCol(
@@ -85,7 +389,8 @@ const _getCol = async (path, _signer, SmartWeave, current_path = [], kvs) => {
       _signer,
       SmartWeave,
       current_path,
-      kvs
+      kvs,
+      state,
     )
   }
 }
@@ -183,13 +488,13 @@ const validateData = async ({
         ])
         return intersection(ops)(methods).length > 0
       }
-      const fn = {
-        parse: async str => [JSON.parse(str), false],
-        stringify: async json => [JSON.stringify(json), false],
+      const _fn = {
+        hash: fn.hash,
+        toBase64: fn.toBase64,
+        parse: fn.parse,
+        stringify: fn.stringify,
         get: async query => {
-          let val = null
-          let isBreak = false
-          val =
+          const val =
             (
               await get(
                 state,
@@ -201,92 +506,19 @@ const validateData = async ({
                 },
                 undefined,
                 SmartWeave,
-                kvs
+                kvs,
               )
             )?.result ?? null
-          return [val, isBreak]
+          return [val, false]
         },
       }
       if (!isNil(rules)) {
-        if (is(Array, rules)) {
-          for (const v of rules || []) {
-            if (isAllowed(v[0], rule_data.request)) {
-              await fpj(v[1], rule_data, { ...fn, ...ac_funcs })
-            }
-          }
-          allowed = rule_data.request.allow === true
-        } else {
-          for (let k in rules || {}) {
-            const [permission, _ops] = k.split(" ")
-            if (permission !== "let") continue
-            const rule = rules[k]
-            let ok = false
-            if (isNil(_ops)) {
-              ok = true
-            } else {
-              const ops = _ops.split(",")
-              if (
-                intersection(ops)(["write", rule_data.request.method]).length >
-                0
-              ) {
-                ok = true
-              }
-            }
-
-            if (ok) {
-              for (let k2 in rule || {}) {
-                let _op = rule[k2][0]
-                let logic = rule[k2]
-                if (_op === "if") {
-                  if (!fpjson(clone(rule[k2][1]), rule_data)) continue
-                  logic = rule[k2][2]
-                } else if (_op === "ifelse") {
-                  if (fpjson(clone(rule[k2][1]), rule_data)) {
-                    logic = rule[k2][2]
-                  } else {
-                    logic = rule[k2][3]
-                  }
-                }
-                _op = logic[0]
-                if (_op === "get") {
-                  const result =
-                    (
-                      await get(
-                        state,
-                        {
-                          input: {
-                            function: "get",
-                            query: __parse(logic[1], rule_data),
-                          },
-                        },
-                        undefined,
-                        SmartWeave,
-                        kvs
-                      )
-                    )?.result ?? null
-                  setElm(k2, result, rule_data)
-                } else {
-                  setElm(k2, fpjson(clone(logic), rule_data), rule_data)
-                }
-              }
-            }
-          }
-          for (let k in rules || {}) {
-            const spk = k.split(" ")
-            if (spk[0] === "let") continue
-            const rule = rules[k]
-            const [permission, _ops] = k.split(" ")
-            const ops = _ops.split(",")
-            if (
-              intersection(ops)(["write", rule_data.request.method]).length > 0
-            ) {
-              const ok = jsonLogic.apply(rule, rule_data)
-              if (permission === "allow" && ok) {
-                allowed = true
-              } else if (permission === "deny" && ok) err()
-            }
+        for (const v of rules || []) {
+          if (isAllowed(v[0], rule_data.request)) {
+            await fpj(v[1], rule_data, { ..._fn, ...ac_funcs })
           }
         }
+        allowed = rule_data.request.allow === true
       }
       if (!allowed) err("operation not allowed")
       return rule_data.resource.newData
@@ -313,9 +545,9 @@ const getDoc = async (
   kvs,
   get,
   type,
-  _func
-) =>
-  await _getDoc(
+  _func,
+) => {
+  return await _getDoc(
     null,
     path,
     _signer,
@@ -333,9 +565,17 @@ const getDoc = async (
     undefined,
     get,
     type,
-    _func
+    _func,
   )
-
+}
+const addNewCol = async (_col, current_path, data, kvs, state, SmartWeave) => {
+  const full_path = append(_col, current_path).join("/")
+  state.collections ??= {}
+  state.collection_count ??= 0
+  state.collections[full_path] = { id: state.collection_count++, count: 0 }
+  data[_col] = true
+  await kv(kvs, SmartWeave).put(`data.${current_path.join("/")}`, data)
+}
 const _getDoc = async (
   data,
   path,
@@ -354,15 +594,14 @@ const _getDoc = async (
   doc,
   get,
   type,
-  _func
+  _func,
 ) => {
   data = (await kv(kvs, SmartWeave).get(`data.${current_path.join("/")}`)) || {}
   const [_col, id] = path
-  if (!isValidName(_col)) err(`collection id is not valid: ${_col}`)
-  if (!isValidName(id)) err(`doc id is not valid: ${id}`)
+  if (!isValidName(_col, state)) err(`collection id is not valid: ${_col}`)
+  if (!isValidDocName(id, state)) err(`doc id is not valid: ${id}`)
   if (isNil(data[_col])) {
-    data[_col] = true
-    await kv(kvs, SmartWeave).put(`data.${current_path.join("/")}`, data)
+    await addNewCol(_col, current_path, data, kvs, state, SmartWeave)
   }
   current_path.push(_col)
   current_path.push(id)
@@ -389,7 +628,7 @@ const _getDoc = async (
           _signer,
           SmartWeave,
           action,
-          state
+          state,
         )
       ).__data
     } else if (includes(func)(["update", "upsert"])) {
@@ -402,7 +641,7 @@ const _getDoc = async (
           _signer,
           SmartWeave,
           action,
-          state
+          state,
         )
       ).__data
     }
@@ -446,7 +685,7 @@ const _getDoc = async (
         doc,
         get,
         type,
-        _func
+        _func,
       )
     : {
         doc,
@@ -474,7 +713,7 @@ const parse = async (
   SmartWeave,
   kvs,
   get,
-  type
+  type,
 ) => {
   return await _parse(
     state,
@@ -486,7 +725,7 @@ const parse = async (
     SmartWeave,
     kvs,
     type,
-    { getDoc, getCol, addNewDoc, get }
+    { getDoc, getCol, addNewDoc, get },
   )
 }
 
@@ -507,7 +746,7 @@ const trigger = async (
   executeCron,
   depth,
   vars,
-  timestamp
+  timestamp,
 ) => {
   const trigger_key = `trigger.${init(path).join("/")}`
   state.triggers ??= {}
@@ -524,7 +763,7 @@ const trigger = async (
         _kvs,
         depth,
         { ...vars, batch: [] },
-        timestamp
+        timestamp,
       )
       state = _state
       for (const k in _kvs) kvs[k] = _kvs[k]
@@ -685,7 +924,7 @@ const _parser = query => {
               }
               if (!isNil(_range_field) && _range_field !== v[0]) {
                 err(
-                  `inequity has to be on the same field [${JSON.stringify(v)}]`
+                  `inequity has to be on the same field [${JSON.stringify(v)}]`,
                 )
               } else if (
                 _ranges[v[1]] ||
@@ -766,10 +1005,10 @@ const _parser = query => {
     (!isNil(_filter.in)
       ? [_filter.in]
       : !isNil(_filter["not-in"])
-      ? [_filter["not-in"]]
-      : !isNil(_filter["!="])
-      ? [_filter["!="]]
-      : null)
+        ? [_filter["not-in"]]
+        : !isNil(_filter["!="])
+          ? [_filter["!="]]
+          : null)
   q.sortByTail = false
   return q
 }
@@ -786,8 +1025,8 @@ const checkStartEnd = q => {
   ) {
     err(
       `range [${JSON.stringify(
-        q.start ?? q.end
-      )}] cannot be used with ==/inequity`
+        q.start ?? q.end,
+      )}] cannot be used with ==/inequity`,
     )
   }
   let start = null
@@ -1035,6 +1274,86 @@ const parseQuery = query => {
   return parsed
 }
 
+function uint8ArrayToHexString(uint8Array) {
+  let hexString = "0x"
+  for (const e of uint8Array) {
+    const hex = e.toString(16)
+    hexString += hex.length === 1 ? `0${hex}` : hex
+  }
+  return hexString
+}
+
+const isHexStrict = hex =>
+  typeof hex === "string" && /^((-)?0x[0-9a-f]+|(0x))$/i.test(hex)
+
+const isUint8Array = data =>
+  data instanceof Uint8Array ||
+  data?.constructor?.name === "Uint8Array" ||
+  data?.constructor?.name === "Buffer"
+
+const isEVMAddress = (value, checkChecksum = true) => {
+  if (typeof value !== "string" && !isUint8Array(value)) return false
+  let valueToCheck
+  if (isUint8Array(value)) {
+    valueToCheck = uint8ArrayToHexString(value)
+  } else if (typeof value === "string" && !isHexStrict(value)) {
+    valueToCheck = value.toLowerCase().startsWith("0x") ? value : `0x${value}`
+  } else {
+    valueToCheck = value
+  }
+  if (!/^(0x)?[0-9a-f]{40}$/i.test(valueToCheck)) return false
+
+  if (
+    /^(0x|0X)?[0-9a-f]{40}$/.test(valueToCheck) ||
+    /^(0x|0X)?[0-9A-F]{40}$/.test(valueToCheck)
+  ) {
+    return true
+  }
+  return true
+}
+
+const wrapResult = (state, original_signer, SmartWeave, extra) => ({
+  state,
+  result: mergeLeft(extra, {
+    original_signer,
+    transaction: {
+      id: SmartWeave?.transaction?.id || null,
+      owner: SmartWeave?.transaction?.owner || null,
+      tags: SmartWeave?.transaction?.tags || null,
+      quantity: SmartWeave?.transaction?.quantity || null,
+      target: SmartWeave?.transaction?.target || null,
+      reward: SmartWeave?.transaction?.reward || null,
+      timestamp: SmartWeave?.transaction?.timestamp || null,
+    },
+    block: {
+      height: SmartWeave?.block?.height || null,
+      timestamp: SmartWeave?.block?.timestamp || null,
+      indep_hash: SmartWeave?.block?.indep_hash || null,
+    },
+  }),
+})
+
+const isOwner = (signer, state) => {
+  let owner = state.owner || []
+  if (is(String)(owner)) owner = of(owner)
+  if (!includes(signer)(owner)) {
+    err(`Signer[${signer}] is not the owner[${owner.join(", ")}].`)
+  }
+  return owner
+}
+
+const validateSchema = async (schema, data, contractErr, state, SmartWeave) => {
+  if (!isNil(schema)) {
+    const { error, valid } = await validate(
+      data,
+      clone(schema),
+      state,
+      SmartWeave,
+    )
+    if (!valid) err("invalid schema", contractErr)
+  }
+}
+
 const auth = async (
   state,
   action,
@@ -1042,7 +1361,7 @@ const auth = async (
   SmartWeave,
   use_nonce = true,
   kvs,
-  fn
+  fn,
 ) => {
   if (isNil(state.auth)) return { signer: null, original_signer: null }
   const {
@@ -1055,12 +1374,19 @@ const auth = async (
   } = action.input
   if (
     !includes(type)(
-      state.auth.algorithms || ["secp256k1", "secp256k1-2", "ed25519", "rsa256"]
+      state.auth.algorithms || [
+        "secp256k1",
+        "secp256k1-2",
+        "ed25519",
+        "rsa256",
+      ],
     )
   ) {
     err(`The wrong algorithm`)
   }
+
   let _caller = caller
+  let original_signer = null
   const EIP712Domain = [
     { name: "name", type: "string" },
     { name: "version", type: "string" },
@@ -1092,7 +1418,10 @@ const auth = async (
     message,
   }
   let signer = null
-  if (type === "ed25519") {
+  if (state.auth.skip_validation) {
+    if (!isNil(action.input.signer)) original_signer = action.input.signer
+    signer = caller
+  } else if (type === "ed25519") {
     const { isValid } = await read(
       state.contracts.dfinity,
       {
@@ -1101,7 +1430,7 @@ const auth = async (
         signature,
         signer: caller,
       },
-      SmartWeave
+      SmartWeave,
     )
     if (isValid) {
       signer = caller
@@ -1119,7 +1448,7 @@ const auth = async (
     const isValid = await _crypto.verify(
       pubKey,
       encoded_data,
-      Buffer.from(signature, "hex")
+      Buffer.from(signature, "hex"),
     )
     if (isValid) {
       signer = caller
@@ -1135,7 +1464,7 @@ const auth = async (
           data: _data,
           signature,
         },
-        SmartWeave
+        SmartWeave,
       )
     ).signer
   } else if (type == "secp256k1-2") {
@@ -1147,7 +1476,7 @@ const auth = async (
           data: _data,
           signature,
         },
-        SmartWeave
+        SmartWeave,
       )
     ).signer
   }
@@ -1161,10 +1490,10 @@ const auth = async (
       ? Math.round(SmartWeave.transaction.timestamp)
       : SmartWeave.block.timestamp
     : Math.round(action.timestamp / 1000)
-  let original_signer = signer
+  original_signer ??= signer
   let _signer = signer
   if (_signer !== _caller) {
-    const link = state.auth.links[_signer]
+    const link = await fn.getAddressLink(_signer, state, kvs, SmartWeave)
     if (!isNil(link)) {
       let _address = is(Object, link) ? link.address : link
       let _expiry = is(Object, link) ? link.expiry || 0 : 0
@@ -1172,18 +1501,27 @@ const auth = async (
     }
   }
   if (_signer !== _caller) err(`signer[${_signer}] is not caller[${_caller}]`)
+  if (!isNil(action.input.signer) && action.input.signer !== original_signer) {
+    err(`signer[${_signer}] is not caller[${_caller}]`)
+  }
   if (use_nonce !== false)
     await fn.useNonce(nonce, original_signer, state, kvs, SmartWeave)
   return { signer: _signer, original_signer }
 }
 
 module.exports = {
+  validateSchema,
   trigger,
   getDoc: _getDoc,
   getCol: _getCol,
   parse,
   kv,
   parseQuery,
-  err,
   auth,
+  isEVMAddress,
+  err,
+  isEvolving,
+  wrapResult,
+  isOwner,
+  read,
 }

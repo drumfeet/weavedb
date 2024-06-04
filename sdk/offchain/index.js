@@ -2,7 +2,7 @@ const { tail, isNil, clone, mergeLeft } = require("ramda")
 const Base = require("weavedb-base")
 let arweave = require("arweave")
 if (!isNil(arweave.default)) arweave = arweave.default
-let contracts, handle, handle_kv, handle_bpt, version, version_kv, version_bpt
+let contracts, handle_bpt, version, version_bpt
 
 class OffChain extends Base {
   constructor({
@@ -12,15 +12,15 @@ class OffChain extends Base {
     contractTxId,
     noauth = false,
     caller = null,
+    secure = true,
+    local = false,
     _contracts = "weavedb-contracts",
-  }) {
+  } = {}) {
     super()
-    ;({ handle } = require(`${_contracts}/weavedb/contract`))
-    ;({ handle: handle_kv } = require(`${_contracts}/weavedb-kv/contract`))
-    ;({ handle: handle_bpt } = require(`${_contracts}/weavedb-bpt/contract`))
-    version = require(`${_contracts}/weavedb/lib/version`)
-    version_kv = require(`${_contracts}/weavedb-kv/lib/version`)
-    version_bpt = require(`${_contracts}/weavedb-bpt/lib/version`)
+    this._contracts = _contracts
+    version_bpt = require(`${this._contracts}/weavedb-bpt/lib/version`)
+    this.queue = []
+    this.ongoing = false
 
     this.caller = caller
     this.noauth = noauth
@@ -28,8 +28,13 @@ class OffChain extends Base {
     this.network = "offchain"
     this.cache = cache
     this.type = type
-    this.handle =
-      this.type === 1 ? handle : this.type === 2 ? handle_kv : handle_bpt
+
+    this.handles = {}
+    ;({ handle: handle_bpt } = require(
+      `${this._contracts}/weavedb-bpt/contract`,
+    ))
+    this.handle = this.type === 3 ? handle_bpt : handle_bpt
+    this.local = local
     this.validity = {}
     this.txs = []
     this.arweave = arweave.init()
@@ -39,81 +44,30 @@ class OffChain extends Base {
       version: "1",
       verifyingContract: this.contractTxId,
     }
-    this.state = mergeLeft(
-      state,
-      this.type === 1
-        ? {
-            version,
-            canEvolve: true,
-            evolve: null,
-            secure: true,
-            data: {},
-            nonces: {},
-            ids: {},
-            indexes: {},
-            auth: {
-              algorithms: ["secp256k1", "secp256k1-2", "ed25519", "rsa256"],
-              name: "weavedb",
-              version: "1",
-              links: {},
-            },
-            crons: {
-              lastExecuted: 0,
-              crons: {},
-            },
-            contracts: {
-              ethereum: "ethereum",
-              dfinity: "dfinity",
-              nostr: "nostr",
-              polygonID: "polygon-id",
-            },
-          }
-        : this.type === 2
-        ? {
-            version: version_kv,
-            canEvolve: true,
-            evolve: null,
-            secure: true,
-            auth: {
-              algorithms: ["secp256k1", "secp256k1-2", "ed25519", "rsa256"],
-              name: "weavedb",
-              version: "1",
-              links: {},
-            },
-            crons: {
-              lastExecuted: 0,
-              crons: {},
-            },
-            contracts: {
-              ethereum: "ethereum",
-              dfinity: "dfinity",
-              nostr: "nostr",
-              polygonID: "polygon-id",
-            },
-          }
-        : {
-            version: version_bpt,
-            canEvolve: true,
-            evolve: null,
-            secure: true,
-            auth: {
-              algorithms: ["secp256k1", "secp256k1-2", "ed25519", "rsa256"],
-              name: "weavedb",
-              version: "1",
-            },
-            crons: {
-              lastExecuted: 0,
-              crons: {},
-            },
-            contracts: {
-              ethereum: "ethereum",
-              dfinity: "dfinity",
-              nostr: "nostr",
-              bundler: "bundler",
-              polygonID: "polygon-id",
-            },
-          }
-    )
+    this.state = mergeLeft(state, {
+      version: version_bpt,
+      canEvolve: true,
+      evolve: null,
+      secure,
+      auth: {
+        algorithms: ["secp256k1", "secp256k1-2", "ed25519", "rsa256"],
+        name: "weavedb",
+        version: "1",
+      },
+      crons: {
+        lastExecuted: 0,
+        crons: {},
+      },
+      contracts: {
+        ethereum: "ethereum",
+        dfinity: "dfinity",
+        nostr: "nostr",
+        bundler: "bundler",
+        polygonID: "polygon-id",
+        jsonschema: "jsonschema",
+      },
+      bridges: [],
+    })
     if (noauth) delete this.state.auth
     this.initialState = clone(this.state)
     this.height = 0
@@ -130,7 +84,7 @@ class OffChain extends Base {
       timestamp: date,
     })
     return arweave.utils.bufferTob64Url(
-      await arweave.crypto.hash(arweave.utils.stringToBuffer(str))
+      await arweave.crypto.hash(arweave.utils.stringToBuffer(str)),
     )
   }
 
@@ -143,8 +97,8 @@ class OffChain extends Base {
           !isNil(kvs[key])
             ? clone(kvs[key])
             : typeof this.cache === "object"
-            ? await this.cache.get(key, this)
-            : this.kvs[key] ?? null,
+              ? await this.cache.get(key, this)
+              : this.kvs[key] ?? null,
         put: async (key, val) => (kvs[key] = val),
       },
       contract: { id: this.contractTxId },
@@ -156,7 +110,7 @@ class OffChain extends Base {
       transaction: { id: await this.getTxId(input, date), timestamp: date },
       contracts: {
         viewContractState: async (contract, param, SmartWeave) => {
-          const { handle } = require(`weavedb-contracts/${contract}/contract`)
+          const { handle } = require(`${this._contracts}/${contract}/contract`)
           try {
             return await handle({}, { input: param }, SmartWeave)
           } catch (e) {
@@ -168,13 +122,9 @@ class OffChain extends Base {
   }
 
   async read(input, date) {
-    return (
-      await this.handle(
-        clone(this.state),
-        { input },
-        await this.getSW(input, date)
-      )
-    ).result
+    const sw = await this.getSW(input, date)
+    const handle = await this.getHandle(this.state.version, sw)
+    return (await handle(clone(this.state), { input }, sw)).result
   }
 
   async dryRead(state, queries, date) {
@@ -182,14 +132,10 @@ class OffChain extends Base {
     for (const v of queries || []) {
       let res = { success: false, err: null, result: null }
       const input = { function: v[0], query: tail(v) }
+      const sw = await this.getSW(input, date)
+      const handle = await this.getHandle(this.state.version, sw)
       try {
-        res.result = (
-          await this.handle(
-            clone(state),
-            { input },
-            await this.getSW(input, date)
-          )
-        ).result
+        res.result = (await handle(clone(state), { input }, sw)).result
         res.success = true
       } catch (e) {
         res.err = e
@@ -198,9 +144,34 @@ class OffChain extends Base {
     }
     return results
   }
-
-  async write(func, param, dryWrite, bundle, relay = false, onDryWrite, date) {
-    if (JSON.stringify(param).length > 3900) {
+  async next() {
+    if (!this.ongoing) {
+      if (this.queue.length > 0) {
+        this.ongoing = true
+        const q = this.queue.shift()
+        await q[0](await this._writeContract(...q[1]))
+        this.ongoing = false
+        if (this.queue.length > 0) this.next()
+      }
+    }
+  }
+  async write(...params) {
+    return await new Promise(res => {
+      this.queue.push([res, params])
+      this.next()
+    })
+  }
+  async _writeContract(
+    func,
+    param,
+    dryWrite,
+    bundle,
+    relay = false,
+    onDryWrite,
+    date,
+    caller,
+  ) {
+    if (JSON.stringify(param).length > 15000) {
       return {
         nonce: param.nonce,
         signer: param.caller,
@@ -220,11 +191,13 @@ class OffChain extends Base {
       let error = null
       let tx = null
       let sw = await this.getSW(param, date)
+      const input = param
+      const handle = await this.getHandle(this.state.version, sw)
       try {
-        tx = await this.handle(
+        tx = await handle(
           clone(this.state),
-          { caller: this.caller, input: param },
-          sw
+          { caller: caller ?? this.caller, input: param },
+          sw,
         )
         this.state = tx.state
         if (typeof this.cache === "object") {
@@ -264,6 +237,9 @@ class OffChain extends Base {
         duration: Date.now() - start,
         error,
         function: param.function,
+        messages: tx?.result?.messages ?? [],
+        events: tx?.result?.events ?? [],
+        attributes: tx?.result?.attributes ?? [],
       }
       let _func = param.function
       let _query = param.query

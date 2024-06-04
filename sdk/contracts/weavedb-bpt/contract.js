@@ -1,19 +1,18 @@
-const { hash } = require("../common/actions/read/hash")
-const { getCrons } = require("../common/actions/read/getCrons")
-const { getAlgorithms } = require("../common/actions/read/getAlgorithms")
+const { hash } = require("./actions/read/hash")
+const { getCrons } = require("./actions/read/getCrons")
+const { getAlgorithms } = require("./actions/read/getAlgorithms")
 
-const {
-  getLinkedContract,
-} = require("../common/actions/read/getLinkedContract")
+const { getLinkedContract } = require("./actions/read/getLinkedContract")
 
-const { getOwner } = require("../common/actions/read/getOwner")
-const { getRelayerJob } = require("../common/actions/read/getRelayerJob")
-const { listRelayerJobs } = require("../common/actions/read/listRelayerJobs")
-const { getEvolve } = require("../common/actions/read/getEvolve")
-const { getTriggers } = require("../common/actions/read/getTriggers")
+const { getOwner } = require("./actions/read/getOwner")
+const { getRelayerJob } = require("./actions/read/getRelayerJob")
+const { listRelayerJobs } = require("./actions/read/listRelayerJobs")
+const { getEvolve } = require("./actions/read/getEvolve")
+const { getTriggers } = require("./actions/read/getTriggers")
 const { getBundlers } = require("./actions/read/getBundlers")
 
 const { getInfo } = require("./actions/read/getInfo")
+const { getTokens } = require("./actions/read/getTokens")
 const { getAddressLink } = require("./actions/read/getAddressLink")
 const { ids } = require("./actions/read/ids")
 const { validities } = require("./actions/read/validities")
@@ -24,7 +23,7 @@ const { getSchema } = require("./actions/read/getSchema")
 const { getRules } = require("./actions/read/getRules")
 const { getIndexes } = require("./actions/read/getIndexes")
 const { listCollections } = require("./actions/read/listCollections")
-
+const { getCollection } = require("./actions/read/getCollection")
 const { query } = require("./actions/write/query")
 const { nostr } = require("./actions/write/nostr")
 const { set } = require("./actions/write/set")
@@ -32,6 +31,9 @@ const { tick } = require("./actions/write/tick")
 const { upsert } = require("./actions/write/upsert")
 const { update } = require("./actions/write/update")
 const { remove } = require("./actions/write/remove")
+const { creditNotice } = require("./actions/write/creditNotice")
+const { withdrawToken } = require("./actions/write/withdrawToken")
+const { bridgeToken } = require("./actions/write/bridgeToken")
 const { addOwner } = require("./actions/write/addOwner")
 const { removeOwner } = require("./actions/write/removeOwner")
 const { setAlgorithms } = require("./actions/write/setAlgorithms")
@@ -60,7 +62,7 @@ const { removeTrigger } = require("./actions/write/removeTrigger")
 const { setBundlers } = require("./actions/write/setBundlers")
 
 const { cron, executeCron } = require("./lib/cron")
-const { err, isEvolving } = require("../common/lib/utils")
+const { err, isEvolving } = require("./lib/utils")
 const { includes, isNil, keys, filter, compose, match } = require("ramda")
 
 const writes = [
@@ -91,6 +93,9 @@ const writes = [
   "addTrigger",
   "removeTrigger",
   "setBundlers",
+  "creditNotice",
+  "withdrawToken",
+  "bridgeToken",
 ]
 
 const addHash =
@@ -151,8 +156,12 @@ async function handle(state, action, _SmartWeave) {
       return await getAddressLink(...readParams)
     case "listCollections":
       return await listCollections(...readParams)
+    case "getCollection":
+      return await getCollection(...readParams)
     case "getInfo":
       return await getInfo(...readParams)
+    case "getTokens":
+      return await getTokens(...readParams)
     case "getCrons":
       return await getCrons(...readParams)
     case "getAlgorithms":
@@ -205,8 +214,8 @@ async function handle(state, action, _SmartWeave) {
           executeCron,
           undefined,
           undefined,
-          get
-        )
+          get,
+        ),
       )
       break
 
@@ -236,7 +245,7 @@ async function handle(state, action, _SmartWeave) {
       res = await addHash(_SmartWeave)(await bundle(...writeParams))
       break
     case "relay":
-      res = await addHash(_SmartWeave)(await relay(...writeParams))
+      res = await addHash(_SmartWeave)(await relay(...writeParams, batch))
       break
     case "addOwner":
       res = await addHash(_SmartWeave)(await addOwner(...writeParams))
@@ -295,7 +304,15 @@ async function handle(state, action, _SmartWeave) {
     case "removeTrigger":
       res = await addHash(_SmartWeave)(await removeTrigger(...writeParams))
       break
-
+    case "Credit-Notice":
+      res = await addHash(_SmartWeave)(await creditNotice(...writeParams))
+      break
+    case "withdrawToken":
+      res = await addHash(_SmartWeave)(await withdrawToken(...writeParams))
+      break
+    case "bridgeToken":
+      res = await addHash(_SmartWeave)(await bridgeToken(...writeParams))
+      break
     case "addAddressLink":
       res = await addHash(_SmartWeave)(
         await addAddressLink(
@@ -306,8 +323,8 @@ async function handle(state, action, _SmartWeave) {
           _SmartWeave,
           undefined,
           kvs,
-          get
-        )
+          get,
+        ),
       )
       break
     case "evolve":
@@ -318,7 +335,7 @@ async function handle(state, action, _SmartWeave) {
       break
     default:
       err(
-        `No function supplied or function not recognised: "${action.input.function}"`
+        `No function supplied or function not recognised: "${action.input.function}"`,
       )
   }
   if (!isNil(res)) {

@@ -15,6 +15,7 @@ describe("WeaveDB Offchain BPT", function () {
     dfinityTxId,
     ethereumTxId,
     bundlerTxId,
+    jsonschemaTxId,
     nostrTxId,
     polygonIDTxId,
     arweave
@@ -25,6 +26,7 @@ describe("WeaveDB Offchain BPT", function () {
     dfinityTxId = "dfinity"
     ethereumTxId = "ethereum"
     bundlerTxId = "bundler"
+    jsonschemaTxId = "jsonschema"
     nostrTxId = "nostr"
     polygonIDTxId = "polygon-id"
     wallet = EthWallet.generate()
@@ -37,14 +39,21 @@ describe("WeaveDB Offchain BPT", function () {
     contractTxId = "offchain"
     walletAddress = await arweave.wallets.jwkToAddress(arweave_wallet)
     db = new DB({
-      state: { nostr: "nostr_events", secure: false, owner: walletAddress },
+      state: {
+        nostr: "nostr_events",
+        secure: false,
+        owner: walletAddress,
+        bridges: ["ethereum"],
+        max_doc_id_length: 28,
+        max_doc_size: 256,
+      },
       type: 3,
       caller: walletAddress,
       _contracts: "../contracts",
+      local: true,
     })
     db.setDefaultWallet(wallet)
   })
-
   tests(
     it,
     () => ({
@@ -58,11 +67,12 @@ describe("WeaveDB Offchain BPT", function () {
       walletAddress,
       dfinityTxId,
       ethereumTxId,
+      jsonschemaTxId,
       contractTxId,
       bundlerTxId,
       nostrTxId,
       polygonIDTxId,
     }),
-    local
+    local,
   )
 })

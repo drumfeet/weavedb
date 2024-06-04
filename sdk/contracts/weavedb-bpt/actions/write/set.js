@@ -1,6 +1,12 @@
-const { init, last, isNil } = require("ramda")
-const { err, parse, trigger } = require("../../lib/utils")
-const { validateSchema, wrapResult } = require("../../../common/lib/utils")
+const { includes, init, last, isNil } = require("ramda")
+const { encode, toSignal } = require("../../lib/zkjson")
+const {
+  validateSchema,
+  wrapResult,
+  err,
+  parse,
+  trigger,
+} = require("../../lib/utils")
 const { validate } = require("../../lib/validate")
 const { put } = require("../../lib/index")
 const set = async (
@@ -13,7 +19,7 @@ const set = async (
   executeCron,
   depth = 1,
   type = "direct",
-  get
+  get,
 ) => {
   if ((state.bundlers ?? []).length !== 0 && type === "direct") {
     err("only bundle queries are allowed")
@@ -26,7 +32,7 @@ const set = async (
       "set",
       SmartWeave,
       true,
-      kvs
+      kvs,
     ))
   }
   let { path, schema, next_data } = await parse(
@@ -39,9 +45,12 @@ const set = async (
     SmartWeave,
     kvs,
     get,
-    type
+    type,
   )
-  validateSchema(schema, next_data, contractErr)
+  if (type !== "cron" && includes(path[0])(["__tokens__", "__bridge__"])) {
+    err(`${path[0]} cannot be updated directly`)
+  }
+  await validateSchema(schema, next_data, contractErr, state, SmartWeave)
   let { before, after } = await put(
     next_data,
     last(path),
@@ -49,8 +58,22 @@ const set = async (
     kvs,
     SmartWeave,
     signer,
-    true
+    true,
   )
+
+  if (!isNil(state.max_doc_size)) {
+    let doc_size = null
+    try {
+      const zkjson = toSignal(encode(after.val))
+      doc_size = zkjson.length
+    } catch (e) {
+      err("doc cannot be encoded")
+    }
+    if (doc_size !== null && doc_size > state.max_doc_size) err("doc too large")
+  }
+
+  if (isNil(before.val)) state.collections[init(path).join("/")].count += 1
+
   if (depth < 10) {
     state = await trigger(
       ["create"],
@@ -69,7 +92,7 @@ const set = async (
           setter: after.setter,
         },
       },
-      action.timestamp
+      action.timestamp,
     )
   }
   return wrapResult(state, original_signer, SmartWeave, {

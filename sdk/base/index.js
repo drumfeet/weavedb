@@ -3,7 +3,8 @@ const elliptic = require("elliptic")
 const EthCrypto = require("eth-crypto")
 const { providers, Contract, utils } = require("ethers")
 const md5 = require("md5")
-
+const { keccak256 } = require("./keccak")
+const versions = require("./versions")
 const {
   startAuthentication,
   startRegistration,
@@ -66,6 +67,7 @@ const no_paths = [
   "listRelayerJobs",
   "getEvolve",
   "getInfo",
+  "getTokens",
   "getBundlers",
   "addCron",
   "removeCron",
@@ -78,6 +80,9 @@ const no_paths = [
   "setCanEvolve",
   "setSecure",
   "addOwner",
+  "withdrawToken",
+  "bridgeToken",
+  "lockTokens",
   "removeOwner",
   "addAddressLink",
   "removeAddressLink",
@@ -138,6 +143,61 @@ function to8(base64) {
   return bytes
 }
 
+const isBrowser = new Function(
+  "try {return this===window;}catch(e){ return false;}",
+)
+
+function normalizeContractSource(contractSrc, useVM2) {
+  const lines = contractSrc.trim().split("\n")
+  const first = lines[0]
+  const last = lines[lines.length - 1]
+
+  if (
+    (/\(\s*\(\)\s*=>\s*{/g.test(first) ||
+      /\s*\(\s*function\s*\(\)\s*{/g.test(first)) &&
+    /}\s*\)\s*\(\)\s*;/g.test(last)
+  ) {
+    lines.shift()
+    lines.pop()
+    contractSrc = lines.join("\n")
+  }
+
+  contractSrc = contractSrc
+    .replace(/export\s+async\s+function\s+handle/gmu, "async function handle")
+    .replace(/export\s+function\s+handle/gmu, "function handle")
+
+  if (useVM2) {
+    return `
+    ${contractSrc}
+    module.exports = handle;`
+  } else {
+    return `
+    const window=void 0,document=void 0,Function=void 0,eval=void 0,globalThis=void 0;
+    const [SmartWeave, BigNumber, logger${isBrowser() ? ", Buffer, atob, btoa" : ""}] = arguments;
+    class ContractError extends Error { constructor(message) { super(message); this.name = 'ContractError' } };
+    function ContractAssert(cond, message) { if (!cond) throw new ContractError(message) };
+    ${contractSrc};
+    return handle;
+  `
+  }
+}
+
+let srcs = {}
+
+const dlContract = async version => {
+  if (srcs[version]) return srcs[version]
+  try {
+    const src = await fetch(
+      `https://arweave.net/${versions[version].txid}`,
+    ).then(v => v.text())
+    srcs[version] = src
+    return src
+  } catch (e) {
+    console.log(e)
+    return null
+  }
+}
+
 class Base {
   constructor() {
     this.reads = [
@@ -160,11 +220,72 @@ class Base {
       "getRelayerJob",
       "listRelayerJobs",
       "listCollections",
+      "getCollection",
       "getInfo",
+      "getTokens",
       "getNonce",
       "getBundlers",
     ]
   }
+  hash([bufs, bytes = 20]) {
+    let _bufs = map(v => {
+      let type = "utf8"
+      let val = v
+      if (is(Array, v)) {
+        val = v[0]
+        type = v[1] ?? "utf8"
+      }
+      if (type === "hex" && val.startsWith("0x")) val = val.slice(2)
+      return Buffer.from(val, type)
+    })(bufs)
+    return this.to64(keccak256(Buffer.concat(_bufs)))
+  }
+  to64(from, type, bytes = 20) {
+    return Buffer.from(from, type)
+      .slice(0, bytes)
+      .toString("base64")
+      .replace(/\//g, "_")
+      .replace(/\+/g, "-")
+  }
+  toBase64([str, type = "hex", bytes = 20]) {
+    if (str.startsWith("0x")) str = str.slice(2)
+    return this.to64(str, type, bytes)
+  }
+  _getHandle(sw, func) {
+    try {
+      const swGlobal = sw
+      const BigNumber = require("bignumber.js")
+      const handler = isBrowser()
+        ? func(swGlobal, BigNumber, null, Buffer, atob, btoa)
+        : func(swGlobal, BigNumber, null)
+      return handler ?? this.handle
+    } catch (e) {
+      return this.handle
+    }
+  }
+  setSrc(src) {
+    this.contractFunction = this.normalizeSrc(src)
+  }
+  normalizeSrc(src) {
+    const normalizedSource = normalizeContractSource(src)
+    return new Function(normalizedSource)
+  }
+  async getHandle(ver, sw) {
+    if (this.local) {
+      if (this.contractFunction) {
+        return this._getHandle(sw, this.contractFunction)
+      } else {
+        return this.handle
+      }
+    }
+    try {
+      const src = await dlContract(ver)
+      return this._getHandle(sw, this.normalizeSrc(src))
+    } catch (e) {
+      return this.handle
+    }
+  }
+
   zkp(proof, pub_signals) {
     return { __op: "zkp", proof, pub_signals }
   }
@@ -216,7 +337,7 @@ class Base {
   async getAddressLink(address, nocache) {
     return this.read(
       { function: "getAddressLink", query: { address } },
-      nocache
+      nocache,
     )
   }
 
@@ -227,7 +348,7 @@ class Base {
           function: "nonce",
           address,
         },
-        nocache
+        nocache,
       )) + 1
     )
   }
@@ -238,7 +359,7 @@ class Base {
         function: "ids",
         tx,
       },
-      nocache
+      nocache,
     )
   }
 
@@ -248,7 +369,7 @@ class Base {
         function: "validities",
         tx,
       },
-      nocache
+      nocache,
     )
   }
 
@@ -275,6 +396,18 @@ class Base {
 
   async addOwner(address, opt) {
     return this._write2("addOwner", { address }, opt)
+  }
+
+  async lockTokens(opt) {
+    return this._write2("lockTokens", {}, opt)
+  }
+
+  async withdrawToken(input, opt) {
+    return this._write2("withdrawToken", input, opt)
+  }
+
+  async bridgeToken(input, opt) {
+    return this._write2("bridgeToken", input, opt)
   }
 
   async setBundlers(bundlers, opt) {
@@ -397,7 +530,7 @@ class Base {
         multisigs,
         onDryWrite,
         data,
-        parallel
+        parallel,
       )
     } else if (
       isNil(intmax) &&
@@ -425,25 +558,25 @@ class Base {
     return !isNil(intmax)
       ? await this.writeWithIntmax(intmax, ...params)
       : !isNil(ii)
-      ? await this.writeWithII(ii, ...params)
-      : !isNil(ar)
-      ? await this.writeWithAR(ar, ...params)
-      : await this.writeWithEVM(
-          wallet,
-          func,
-          query,
-          nonce,
-          privateKey,
-          dryWrite,
-          bundle,
-          extra,
-          relay,
-          jobID,
-          multisigs,
-          onDryWrite,
-          data,
-          parallel
-        )
+        ? await this.writeWithII(ii, ...params)
+        : !isNil(ar)
+          ? await this.writeWithAR(ar, ...params)
+          : await this.writeWithEVM(
+              wallet,
+              func,
+              query,
+              nonce,
+              privateKey,
+              dryWrite,
+              bundle,
+              extra,
+              relay,
+              jobID,
+              multisigs,
+              onDryWrite,
+              data,
+              parallel,
+            )
   }
 
   setDefaultWallet(wallet, type = "evm") {
@@ -513,7 +646,7 @@ class Base {
         expectedRPID: location.hostname,
       })
       _identity.credentialID = Buffer.from(
-        verification.registrationInfo.credentialID
+        verification.registrationInfo.credentialID,
       ).toString("base64")
     }
     let response = null
@@ -539,7 +672,7 @@ class Base {
         jobID: "auth:webauthn",
       },
       "webauthn",
-      _identity
+      _identity,
     )
     const nonce = 1
     const data = {
@@ -624,7 +757,7 @@ class Base {
           relay: true,
           jobID: "auth:lens",
         },
-        "lens"
+        "lens",
       )
       const profile = await this.repeatQuery(contract.getProfile, [tokenID])
       identity.profile = pick(
@@ -636,7 +769,7 @@ class Base {
           "imageURI",
           "pubCount",
         ],
-        profile
+        profile,
       )
       identity.profile.pubCount = identity.profile.pubCount.toNumber()
       if (isNil(this.litNodeClient)) {
@@ -723,7 +856,7 @@ class Base {
       expiry,
       linkTo,
       opt,
-      "intmax"
+      "intmax",
     )
   }
 
@@ -732,7 +865,7 @@ class Base {
     proof,
     expiry,
     linkTo,
-    opt = {}
+    opt = {},
   ) {
     opt.privateKey = identity.privateKey
     const addr = proof.did
@@ -758,8 +891,8 @@ class Base {
       addr = is(String, evm)
         ? evm
         : is(Object, wallet)
-        ? wallet.getAddressString()
-        : null
+          ? wallet.getAddressString()
+          : null
       if (isNil(addr)) {
         throw Error("No address specified")
         return
@@ -777,7 +910,7 @@ class Base {
       expiry,
       linkTo,
       opt,
-      "evm"
+      "evm",
     )
   }
 
@@ -842,12 +975,12 @@ class Base {
     multisigs,
     onDryWrite,
     __data__,
-    parallel
+    parallel,
   ) {
     let signer, caller, pkey
     if (!isNil(privateKey)) {
       signer = `0x${privateToAddress(
-        Buffer.from(privateKey.replace(/^0x/, ""), "hex")
+        Buffer.from(privateKey.replace(/^0x/, ""), "hex"),
       ).toString("hex")}`
       pkey = Buffer.from(privateKey.replace(/^0x/, ""), "hex")
     } else if (is(Object, wallet)) {
@@ -866,7 +999,6 @@ class Base {
         ? wallet.toLowerCase()
         : wallet
       : signer
-
     const message = {
       nonce,
       query: JSON.stringify({ func, query }),
@@ -894,7 +1026,6 @@ class Base {
           data,
           version: "V4",
         })
-
     let param = mergeLeft(extra, {
       function: func,
       query,
@@ -902,6 +1033,7 @@ class Base {
       nonce,
       caller,
     })
+    if (caller !== signer) param.signer = signer
     if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
     if (!isNil(multisigs)) param.multisigs = multisigs
@@ -913,7 +1045,7 @@ class Base {
       bundle,
       relay,
       onDryWrite,
-      parallel
+      parallel,
     )
   }
 
@@ -930,7 +1062,7 @@ class Base {
     multisigs,
     onDryWrite,
     __data__,
-    parallel
+    parallel,
   ) {
     let addr = ii.toJSON()[0]
     const isaddr = !isNil(addr)
@@ -957,7 +1089,7 @@ class Base {
     function toHexString(bytes) {
       return new Uint8Array(bytes).reduce(
         (str, byte) => str + byte.toString(16).padStart(2, "0"),
-        ""
+        "",
       )
     }
     const _data = Buffer.from(JSON.stringify(data))
@@ -980,7 +1112,7 @@ class Base {
       bundle,
       relay,
       onDryWrite,
-      parallel
+      parallel,
     )
   }
 
@@ -997,7 +1129,7 @@ class Base {
     multisigs,
     onDryWrite,
     __data__,
-    parallel
+    parallel,
   ) {
     const wallet = is(Object, ar) && ar.walletName === "ArConnect" ? ar : null
     let addr = null
@@ -1037,7 +1169,7 @@ class Base {
           await wallet.signature(encoded, {
             name: "RSA-PSS",
             saltLength: 32,
-          })
+          }),
         ).toString("hex")
     let param = mergeLeft(extra, {
       function: func,
@@ -1058,7 +1190,7 @@ class Base {
       bundle,
       relay,
       onDryWrite,
-      parallel
+      parallel,
     )
   }
 
@@ -1075,7 +1207,7 @@ class Base {
     multisigs,
     onDryWrite,
     __data__,
-    parallel
+    parallel,
   ) {
     const wallet = is(Object, intmax) ? intmax : null
     let addr = null
@@ -1139,7 +1271,7 @@ class Base {
             nonce,
             caller: addr,
             type: "secp256k1-2",
-          }
+          },
     )
     if (!isNil(__data__)) param.data = __data__
     if (!isNil(jobID)) param.jobID = jobID
@@ -1151,7 +1283,7 @@ class Base {
       bundle,
       relay,
       onDryWrite,
-      parallel
+      parallel,
     )
   }
 
@@ -1230,9 +1362,9 @@ class Base {
             Base.getKeyInfo(
               contractTxId,
               { function: v[0], query: tail(v) },
-              prefix
+              prefix,
             ),
-          query.query
+          query.query,
         )
       } else {
         const q =
@@ -1258,7 +1390,7 @@ class Base {
     multisigs,
     onDryWrite,
     __data__,
-    parallel
+    parallel,
   ) {
     const param = mergeLeft(extra, { function: func, query })
     if (!isNil(__data__)) param.data = __data__
@@ -1272,7 +1404,7 @@ class Base {
       bundle,
       relay,
       onDryWrite,
-      parallel
+      parallel,
     )
   }
 }
@@ -1283,6 +1415,7 @@ const readQueries = [
   "getIndexes",
   "getTriggers",
   "listCollections",
+  "getCollection",
   "getCrons",
   "getAlgorithms",
   "getRelayerJob",
@@ -1298,7 +1431,7 @@ for (const v of readQueries) {
   }
 }
 
-const reads = ["getOwner", "getEvolve", "getInfo", "getBundlers"]
+const reads = ["getOwner", "getEvolve", "getInfo", "getTokens", "getBundlers"]
 
 for (const v of reads) {
   Base.prototype[v] = async function (nocache) {

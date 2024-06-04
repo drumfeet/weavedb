@@ -1,6 +1,11 @@
-const { equals, isNil, init, last } = require("ramda")
-const { parse, trigger } = require("../../lib/utils")
-const { err, validateSchema, wrapResult } = require("../../../common/lib/utils")
+const { includes, equals, isNil, init, last } = require("ramda")
+const {
+  err,
+  validateSchema,
+  wrapResult,
+  parse,
+  trigger,
+} = require("../../lib/utils")
 const { validate } = require("../../lib/validate")
 const { put } = require("../../lib/index")
 const update = async (
@@ -13,7 +18,7 @@ const update = async (
   executeCron,
   depth = 1,
   type = "direct",
-  get
+  get,
 ) => {
   if ((state.bundlers ?? []).length !== 0 && type === "direct") {
     err("only bundle queries are allowed")
@@ -27,7 +32,7 @@ const update = async (
       "update",
       SmartWeave,
       true,
-      kvs
+      kvs,
     ))
   }
   let { new_data, path, _data, schema, next_data } = await parse(
@@ -40,21 +45,24 @@ const update = async (
     SmartWeave,
     kvs,
     get,
-    type
+    type,
   )
+  if (type !== "cron" && includes(path[0])(["__tokens__", "__bridge__"])) {
+    err(`${path[0]} cannot be updated directly`)
+  }
   if (isNil(_data.__data)) err(`Data doesn't exist`)
-  validateSchema(schema, next_data, contractErr)
+  await validateSchema(schema, next_data, contractErr, state, SmartWeave)
   let { before, after } = await put(
     next_data,
     last(path),
     init(path),
     kvs,
     SmartWeave,
-    signer
+    signer,
   )
   const updated = !equals(before.val, after.val)
   if (updated && depth < 10) {
-    await trigger(
+    state = await trigger(
       ["update"],
       state,
       path,
@@ -71,7 +79,7 @@ const update = async (
           setter: _data.setter,
         },
       },
-      action.timestamp
+      action.timestamp,
     )
   }
   return wrapResult(state, original_signer, SmartWeave, {

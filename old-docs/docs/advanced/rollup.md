@@ -51,6 +51,8 @@ module.exports = {
 
 - `dir` : cache dirctory, default to `/grpc-node/node-server/cache`.
 - `dbname` : cache database name, cache will be stored in `dir/dbname`.
+- `sequencerUrl` : the Warp sequencer URL to use with SDK.
+- `apiKey` : a Warp gateway API key to use with SDK.
 - `nostr` : enable WebSocket for Nostr, this turns the node into a Nostr relay.
   - `db` : the database name for Nostr events, there can be only one DB instance to receive Nostr events.
 
@@ -61,6 +63,8 @@ With everything included,
 module.exports = {
   dir: "/home/xyz/cache",
   dbname: "mydb",
+  sequencerUrl: "https://gw.warp.cc/",
+  apiKey: "xxxxx",
   admin: "privateky...",
   bundler: {
     kty: "RSA",

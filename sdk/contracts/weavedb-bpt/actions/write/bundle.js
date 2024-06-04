@@ -1,7 +1,6 @@
-const { err, wrapResult, read } = require("../../../common/lib/utils")
-const { kv } = require("../../lib/utils")
-const { clone } = require("../../../common/lib/pure")
-const { isNil, includes, map, addIndex: _addIndex } = require("ramda")
+const { err, wrapResult, read, kv } = require("../../lib/utils")
+const { clone } = require("../../lib/pure")
+const { isNil, includes, map, addIndex: _addIndex, concat } = require("ramda")
 const { set } = require("./set")
 const { add } = require("./add")
 const { update } = require("./update")
@@ -18,6 +17,8 @@ const { setSecure } = require("./setSecure")
 const { setAlgorithms } = require("./setAlgorithms")
 const { addIndex } = require("./addIndex")
 const { addOwner } = require("./addOwner")
+const { withdrawToken } = require("./withdrawToken")
+const { bridgeToken } = require("./bridgeToken")
 const { addRelayerJob } = require("./addRelayerJob")
 const { removeCron } = require("./removeCron")
 const { removeIndex } = require("./removeIndex")
@@ -26,6 +27,8 @@ const { removeRelayerJob } = require("./removeRelayerJob")
 const { addTrigger } = require("./addTrigger")
 const { removeTrigger } = require("./removeTrigger")
 const { setBundlers } = require("./setBundlers")
+const { addAddressLink } = require("./addAddressLink")
+const { removeAddressLink } = require("./removeAddressLink")
 
 const getId = async (input, timestamp, SmartWeave) => {
   const str = JSON.stringify({
@@ -35,8 +38,8 @@ const getId = async (input, timestamp, SmartWeave) => {
   })
   return SmartWeave.arweave.utils.bufferTob64Url(
     await SmartWeave.arweave.crypto.hash(
-      SmartWeave.arweave.utils.stringToBuffer(str)
-    )
+      SmartWeave.arweave.utils.stringToBuffer(str),
+    ),
   )
 }
 
@@ -44,10 +47,10 @@ const getHash = async (ids, SmartWeave) => {
   return SmartWeave.arweave.utils.bufferTob64(
     await SmartWeave.arweave.crypto.hash(
       SmartWeave.arweave.utils.concatBuffers(
-        map(v2 => SmartWeave.arweave.utils.stringToBuffer(v2))(ids)
+        map(v2 => SmartWeave.arweave.utils.stringToBuffer(v2))(ids),
       ),
-      "SHA-384"
-    )
+      "SHA-384",
+    ),
   )
 }
 const getNewHash = async (last_hash, current_hash, SmartWeave) => {
@@ -56,7 +59,7 @@ const getNewHash = async (last_hash, current_hash, SmartWeave) => {
     SmartWeave.arweave.utils.stringToBuffer(current_hash),
   ])
   return SmartWeave.arweave.utils.bufferTob64(
-    await SmartWeave.arweave.crypto.hash(hashes, "SHA-384")
+    await SmartWeave.arweave.crypto.hash(hashes, "SHA-384"),
   )
 }
 const bundle = async (
@@ -66,7 +69,10 @@ const bundle = async (
   contractErr = true,
   SmartWeave,
   kvs,
-  executeCron
+  executeCron,
+  depth = 1,
+  type = "direct",
+  get,
 ) => {
   const bundlers = state.bundlers ?? []
   let isBundler = bundlers.length !== 0
@@ -80,7 +86,7 @@ const bundle = async (
       function: "inflate",
       data: action.input.query,
     },
-    SmartWeave
+    SmartWeave,
   )
   const parsed = JSON.parse(data)
   let queries = null
@@ -108,7 +114,7 @@ const bundle = async (
         await kv(kvs, SmartWeave).put(`bundles.${parsed.n}`, cached)
         await kv(kvs, SmartWeave).put(
           `tx_validities.${SmartWeave.transaction.id}`,
-          validity
+          validity,
         )
         return wrapResult(state, original_signer, SmartWeave, {
           validity,
@@ -167,19 +173,28 @@ const bundle = async (
   }
   let validity = []
   let errors = []
+  let messages = []
+  let events = []
+  let attributes = []
   for (const v of queries) {
     let valid = true
     let error = null
+    const sw = {
+      ...SmartWeave,
+      ...(isBundler ? { transaction: { id: v.i, timestamp: v.t } } : {}),
+    }
+
     let params = [
       clone(state),
       { input: v.q, timestamp: isBundler ? v.t : null },
       undefined,
       false,
-      SmartWeave,
+      sw,
       kvs,
       executeCron,
       undefined,
       "bundle",
+      get,
     ]
     try {
       const op = v.q.function
@@ -198,11 +213,11 @@ const bundle = async (
             undefined,
             undefined,
             false,
-            SmartWeave,
+            sw,
             kvs,
             executeCron,
             undefined,
-            "bundle"
+            "bundle",
           )
           break
         case "query":
@@ -272,13 +287,42 @@ const bundle = async (
           res = await setBundlers(...params)
           break
 
+        case "withdrawToken":
+          res = await withdrawToken(...params)
+          break
+
+        case "bridgeToken":
+          res = await bridgeToken(...params)
+          break
+        case "removeAddressLink":
+          res = await removeAddressLink(...params)
+          break
+        case "addAddressLink":
+          res = await addAddressLink(
+            clone(state),
+            { input: v.q, timestamp: isBundler ? v.t : null },
+            undefined,
+            false,
+            sw,
+            undefined,
+            kvs,
+            get,
+          )
+          break
+
         default:
           throw new Error(
-            `No function supplied or function not recognised: "${op}"`
+            `No function supplied or function not recognised: "${op}"`,
           )
       }
-      if (!isNil(res)) state = res.state
+      if (!isNil(res)) {
+        state = res.state
+        messages = concat(messages, res?.result?.messages ?? [])
+        events = concat(events, res?.result?.events ?? [])
+        attributes = concat(attributes, res?.result?.attributes ?? [])
+      }
     } catch (e) {
+      console.log(e)
       error = e?.toString?.() || "unknown error"
       valid = false
     }
@@ -287,9 +331,15 @@ const bundle = async (
   }
   await kv(kvs, SmartWeave).put(
     `tx_validities.${SmartWeave.transaction.id}`,
-    validity
+    validity,
   )
-  return wrapResult(state, original_signer, SmartWeave, { validity, errors })
+  return wrapResult(state, original_signer, SmartWeave, {
+    validity,
+    errors,
+    messages,
+    events,
+    attributes,
+  })
 }
 
 module.exports = { bundle }

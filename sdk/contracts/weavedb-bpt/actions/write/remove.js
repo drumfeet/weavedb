@@ -1,7 +1,6 @@
-const { isNil, last, init } = require("ramda")
-const { parse, trigger } = require("../../lib/utils")
-const { clone } = require("../../../common/lib/pure")
-const { err, wrapResult } = require("../../../common/lib/utils")
+const { includes, isNil, last, init } = require("ramda")
+const { parse, trigger, err, wrapResult } = require("../../lib/utils")
+const { clone } = require("../../lib/pure")
 const { validate } = require("../../lib/validate")
 const { del } = require("../../lib/index")
 
@@ -15,7 +14,7 @@ const remove = async (
   executeCron,
   depth = 1,
   type = "direct",
-  get
+  get,
 ) => {
   if ((state.bundlers ?? []).length !== 0 && type === "direct") {
     err("only bundle queries are allowed")
@@ -28,7 +27,7 @@ const remove = async (
       "delete",
       SmartWeave,
       true,
-      kvs
+      kvs,
     ))
   }
   const { data, query, new_data, path, _data, col } = await parse(
@@ -41,18 +40,22 @@ const remove = async (
     SmartWeave,
     kvs,
     get,
-    type
+    type,
   )
+  if (type !== "cron" && includes(path[0])(["__tokens__", "__bridge__"])) {
+    err(`${path[0]} cannot be updated directly`)
+  }
   if (isNil(_data.__data)) err(`Data doesn't exist`)
   let { before, after } = await del(
     last(path),
     init(path),
     kvs,
     SmartWeave,
-    signer
+    signer,
   )
+  if (!isNil(before.val)) state.collections[init(path).join("/")].count -= 1
   if (depth < 10) {
-    await trigger(
+    state = await trigger(
       ["delete"],
       state,
       path,
@@ -69,7 +72,7 @@ const remove = async (
           setter: _data.setter,
         },
       },
-      action.timestamp
+      action.timestamp,
     )
   }
 

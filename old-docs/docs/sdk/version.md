@@ -15,6 +15,145 @@ await db.getVersion()
 
 ## Change Logs
 
+### v0.44.2-beta (June 2, 2024)
+
+#### Source Transaction Id
+
+[Rs3A_X4dpTGsM5m0IoK-CHrq-D5NlRUYXHXMT_ZE8fQ](https://sonar.warp.cc/#/app/source/Rs3A_X4dpTGsM5m0IoK-CHrq-D5NlRUYXHXMT_ZE8fQ)
+
+#### Added Features
+
+- fix circular error
+
+### v0.44.1-beta (June 1, 2024)
+
+#### Source Transaction Id
+
+[jmXS3lR9XrE9VJ_dtf_arICUmWTp7ZCkNQrKAIpJCMU](https://sonar.warp.cc/#/app/source/jmXS3lR9XrE9VJ_dtf_arICUmWTp7ZCkNQrKAIpJCMU)
+
+#### Added Features
+
+- add `addAddressLink` & `removeAddressLink` to `bundle`
+
+### v0.44.0-beta (May 31, 2024)
+
+#### Source Transaction Id
+
+[6aGRFlJnRC3heWXB1K2OFwSfHQgk6b9p9aHzNlBVTcg](https://sonar.warp.cc/#/app/source/6aGRFlJnRC3heWXB1K2OFwSfHQgk6b9p9aHzNlBVTcg)
+
+#### Added Features
+
+- `hash()`
+- `toBase64()`
+- extract `JSONLogic` to a separate contract
+
+### v0.43.2-beta (May 27, 2024)
+
+#### Source Transaction Id
+
+[LO8BaKIsFyOtkbbuQ03516eBXp1ycRkuKavsCOEcCD8](https://sonar.warp.cc/#/app/source/LO8BaKIsFyOtkbbuQ03516eBXp1ycRkuKavsCOEcCD8)
+
+#### Added Features
+
+- use URL safe base64 for auto-generated IDs
+
+### v0.43.1-beta (May 27, 2024)
+
+#### Source Transaction Id
+
+[0b0iRjS2ez-9xhWo-RKR4eLIjR2333l-JdlJSleRzbY](https://sonar.warp.cc/#/app/source/0b0iRjS2ez-9xhWo-RKR4eLIjR2333l-JdlJSleRzbY)
+
+#### Added Features
+
+- remove FPJSON1.0 with JSONLogic
+- `max_doc_size`
+
+### v0.43.0-beta (May 27, 2024)
+
+#### Source Transaction Id
+
+[VbbJaPOhfC_muOtWmAaLMErgNiR5nuA8AskkwAG5i-8](https://sonar.warp.cc/#/app/source/VbbJaPOhfC_muOtWmAaLMErgNiR5nuA8AskkwAG5i-8)
+
+#### Added Features
+
+- assign auto-increment collection ID
+- record doc count
+- `getCollection`
+- `max_doc_id_length`
+- `max_collection_id_length`
+
+### v0.42.3-beta (May 26, 2024)
+
+#### Source Transaction Id
+
+[-zlBgW-aO44bxbfOdCqCGOvscDutTmGHIuXD9ZxVja8](https://sonar.warp.cc/#/app/source/-zlBgW-aO44bxbfOdCqCGOvscDutTmGHIuXD9ZxVja8)
+
+#### Added Features
+
+- use base64 format for auto-generated docIDs
+
+### v0.42.2-beta (May 24, 2024)
+
+#### Source Transaction Id
+
+[eeltHRBzmfGIBx70plCuhoiJwLKwC_cSVGzZoDrCKnk](https://sonar.warp.cc/#/app/source/eeltHRBzmfGIBx70plCuhoiJwLKwC_cSVGzZoDrCKnk)
+
+#### Added Features
+
+- rewrite transaction id & timestamp on bundle queries
+
+### v0.42.1-beta (May 21, 2024)
+
+#### Source Transaction Id
+
+[upbiZGX-qq2SiLOD9E8odSkvd91E0FCPhlpcqCrEt78](https://sonar.warp.cc/#/app/source/upbiZGX-qq2SiLOD9E8odSkvd91E0FCPhlpcqCrEt78)
+
+#### Added Features
+
+- remove date from bridgeToken
+
+### v0.42.0-beta (May 21, 2024)
+
+#### Source Transaction Id
+
+[NbEFECH4EiS3mXtDZnZNPvmt3xTIH057RUhVi74SM5c](https://sonar.warp.cc/#/app/source/NbEFECH4EiS3mXtDZnZNPvmt3xTIH057RUhVi74SM5c)
+
+#### Added Features
+
+- bridgeToken
+
+### v0.41.0-beta (May 19, 2024)
+
+#### Source Transaction Id
+
+[307ur2pssGdt7KkMpu2RLha33K5qlskQDYGfJPCKUuI](https://sonar.warp.cc/#/app/source/307ur2pssGdt7KkMpu2RLha33K5qlskQDYGfJPCKUuI)
+
+#### Added Features
+
+- L1/L2 tokens (creditNotice, lockTokens, withdrawToken)
+- FPJSON token commands (mint, transfer, withdraw)
+- fix triggers
+
+### v0.40.0-beta (May 6, 2024)
+
+#### Source Transaction Id
+
+[E14TapQNshyUIyN_DNhI0-YdUs8OP4-KXSgZnSxnROM](https://sonar.warp.cc/#/app/source/E14TapQNshyUIyN_DNhI0-YdUs8OP4-KXSgZnSxnROM)
+
+#### Added Features
+
+- skip authentication
+
+### v0.39.1-beta (May 5, 2024)
+
+#### Source Transaction Id
+
+[NwEV3yZjlKGlQ_7sPO16vX_R4QaRWeYmmo_ELLErwpM](https://sonar.warp.cc/#/app/source/NwEV3yZjlKGlQ_7sPO16vX_R4QaRWeYmmo_ELLErwpM)
+
+#### Added Features
+
+- refactor
+
 ### v0.39.0-beta (December 19, 2023)
 
 #### Source Transaction Id

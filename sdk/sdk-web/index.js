@@ -1,5 +1,5 @@
 const { compareVersions } = require("compare-versions")
-
+const FetchOptionsPlugin = require("./warp-contracts-plugin-fetch-options")
 const {
   mergeLeft,
   reject,
@@ -35,8 +35,7 @@ const {
   LoggerFactory: LoggerFactory_old,
   defaultCacheOptions: defaultCacheOptions_old,
 } = require("warp-contracts-old")
-
-const { parseQuery } = require("weavedb-contracts/weavedb/lib/utils")
+const { parseQuery } = require("weavedb-contracts/weavedb-bpt/lib/utils")
 const md5 = require("md5")
 const { createId } = require("@paralleldrive/cuid2")
 let states = {}
@@ -49,8 +48,6 @@ let submap = {}
 let Arweave = require("arweave")
 Arweave = isNil(Arweave.default) ? Arweave : Arweave.default
 const Base = require("weavedb-base")
-const { handle } = require("weavedb-contracts/weavedb/contract")
-const { handle: handle_kv } = require("weavedb-contracts/weavedb-kv/contract")
 const { handle: handle_bpt } = require("weavedb-contracts/weavedb-bpt/contract")
 
 const _on = async (state, input, handle) => {
@@ -66,7 +63,7 @@ const _on = async (state, input, handle) => {
             {
               input: { function: "cget", query },
             },
-            this.getSW()
+            this.getSW(),
           )
           if (!isNil(res)) {
             if (subs[txid][hash].height < block.height) {
@@ -74,13 +71,13 @@ const _on = async (state, input, handle) => {
               let prev = isNil(subs[txid][hash].prev)
                 ? subs[txid][hash].prev
                 : subs[txid][hash].doc
-                ? subs[txid][hash].prev.data
-                : pluck("data", subs[txid][hash].prev)
+                  ? subs[txid][hash].prev.data
+                  : pluck("data", subs[txid][hash].prev)
               let current = isNil(res.result)
                 ? res.result
                 : subs[txid][hash].doc
-                ? res.result.data
-                : pluck("data", res.result)
+                  ? res.result.data
+                  : pluck("data", res.result)
               if (!equals(current, prev)) {
                 for (const k in subs[txid][hash].subs) {
                   try {
@@ -89,10 +86,10 @@ const _on = async (state, input, handle) => {
                         subs[txid][hash].subs[k].con
                           ? res.result
                           : subs[txid][hash].doc
-                          ? isNil(res.result)
-                            ? null
-                            : res.result.data
-                          : pluck("data", res.result)
+                            ? isNil(res.result)
+                              ? null
+                              : res.result.data
+                            : pluck("data", res.result),
                       )
                   } catch (e) {
                     console.log(e)
@@ -138,6 +135,9 @@ class SDK extends Base {
     remoteStateSyncEnabled = true,
     useVM2,
     type = 1,
+    apiKey = "793d13df-2183-46a9",
+    sequencerUrl = "https://gw.warp.cc",
+    local = false,
   }) {
     super()
     this.remoteStateSyncSource = remoteStateSyncSource
@@ -148,9 +148,11 @@ class SDK extends Base {
     this.LitJsSdk = require("@lit-protocol/sdk-browser")
     this.kvs = {}
     this.type = type
-    this.handle =
-      this.type === 1 ? handle : this.type === 2 ? handle_kv : handle_bpt
+    this.local = local
+    this.handle = handle_bpt
     if (!isNil(useVM2)) this.useVM2 = useVM2
+    if (!isNil(sequencerUrl)) this.sequencerUrl = sequencerUrl
+    if (!isNil(apiKey)) this.apiKey = apiKey
     this.LmdbCache = LmdbCache
     this.createClient = createClient
     this.WarpSubscriptionPlugin = WarpSubscriptionPlugin
@@ -171,6 +173,7 @@ class SDK extends Base {
       }
     }
     this.cache = cache
+    if (this.cache === "lmdb" && isNil(this.LmdbCache)) this.cache = "leveldb"
     this.lmdb = lmdb
     this.redis = redis
     this.arweave_wallet = arweave_wallet
@@ -202,14 +205,13 @@ class SDK extends Base {
         ? "localhost"
         : "mainnet")
 
-    if (this.network === "localhost") this.cache = "leveldb"
     if (arweave.host === "host.docker.internal") {
       this.warp = this.Warp.WarpFactory.custom(this.arweave, {}, "local")
         .useArweaveGateway()
         .build()
     } else if (this.network === "localhost") {
       this.warp = this.Warp.WarpFactory.forLocal(
-        isNil(arweave) || isNil(arweave.port) ? 1820 : arweave.port
+        isNil(arweave) || isNil(arweave.port) ? 1820 : arweave.port,
       )
     } else if (this.network === "testnet") {
       this.warp = this.Warp.WarpFactory.forTestnet()
@@ -217,8 +219,11 @@ class SDK extends Base {
       this.warp = this.Warp.WarpFactory.forMainnet(
         undefined,
         undefined,
-        this.arweave
+        this.arweave,
       )
+      if (!isNil(this.apiKey)) {
+        this.warp = this.warp.use(new FetchOptionsPlugin(this.apiKey))
+      }
     }
     this.contractTxId = contractTxId
     if (all(complement(isNil))([contractTxId, wallet, name, version])) {
@@ -244,19 +249,7 @@ class SDK extends Base {
           this.sortKey = _state.sortKey
           states[this.contractTxId] = this.state
           res(_state)
-          try {
-            if (
-              compareVersions(this.state?.version || "0.26.0", "0.27.0") >= 0
-            ) {
-              this.handle = handle_bpt
-            } else if (
-              compareVersions(this.state?.version || "0.26.0", "0.27.0") >= 0
-            ) {
-              this.handle = handle_kv
-            } else {
-              this.handle = handle
-            }
-          } catch (e) {}
+          const ver = this.state?.version || "0.26.0"
         } else {
           if (attempt > 5) {
             res(_state)
@@ -310,15 +303,15 @@ class SDK extends Base {
       throw new Error(". and | are not allowed in prefix")
     }
     if (typeof window === "undefined") {
-      if (this.cache !== "leveldb") {
+      if (this.cache !== "leveldb" && this.network === "mainnet") {
         this.warp.useKVStorageFactory(
           contractTxId =>
             new this.LmdbCache({
               ...defaultCacheOptions,
               dbLocation: `${
                 this.lmdb.dir ?? "./cache"
-              }/warp/kv/lmdb/${contractTxId}`,
-            })
+              }/warp/kv/lmdb/${this.contractTxId}`,
+            }),
         )
       }
       if (this.cache === "lmdb") {
@@ -328,7 +321,7 @@ class SDK extends Base {
               ...this.Warp.defaultCacheOptions,
               dbLocation: `${this.lmdb.dir ?? "./cache"}/warp/state`,
               ...(this.lmdb.state || {}),
-            })
+            }),
           )
           .useContractCache(
             new this.LmdbCache({
@@ -340,7 +333,7 @@ class SDK extends Base {
               ...this.Warp.defaultCacheOptions,
               dbLocation: `${this.lmdb.dir ?? "./cache"}/warp/src`,
               ...(this.lmdb.src || {}),
-            })
+            }),
           )
       } else if (this.cache === "redis") {
         const { RedisCache } = require("./RedisCache")
@@ -360,7 +353,7 @@ class SDK extends Base {
               prefix: `${this.redis.prefix || "warp"}.${
                 this.contractTxId
               }.state`,
-            })
+            }),
           )
           .useContractCache(
             new RedisCache({
@@ -372,34 +365,34 @@ class SDK extends Base {
             new RedisCache({
               client: this.redis_client,
               prefix: `${this.redis.prefix || "warp"}.${this.contractTxId}.src`,
-            })
+            }),
           )
       }
     }
     if (isNil(wallet)) throw Error("wallet missing")
     if (isNil(this.contractTxId)) throw Error("contractTxId missing")
     this.wallet = wallet
+    let evalOpt = {
+      internalWrites: true,
+      remoteStateSyncEnabled:
+        this.isNode || this.network === "localhost"
+          ? false
+          : this.remoteStateSyncSource,
+      remoteStateSyncSource:
+        this.remoteStateSyncSource ?? "https://dre-3.warp.cc/contract",
+      allowBigInt: true,
+      useVM2: !isNil(this.useVM2)
+        ? this.useVM2
+        : typeof window !== "undefined"
+          ? false
+          : !this.old,
+      useKVStorage: this.type !== 1,
+    }
+    if (!isNil(this.sequencerUrl)) evalOpt.sequencerUrl = this.sequencerUrl
     this.db = this.warp
       .contract(this.contractTxId)
       .connect(wallet)
-      .setEvaluationOptions(
-        mergeLeft(evaluationOptions, {
-          internalWrites: true,
-          remoteStateSyncEnabled:
-            this.isNode || this.network === "localhost"
-              ? false
-              : this.remoteStateSyncSource,
-          remoteStateSyncSource:
-            this.remoteStateSyncSource ?? "https://dre-3.warp.cc/contract",
-          allowBigInt: true,
-          useVM2: !isNil(this.useVM2)
-            ? this.useVM2
-            : typeof window !== "undefined"
-            ? false
-            : !this.old,
-          useKVStorage: this.type !== 1,
-        })
-      )
+      .setEvaluationOptions(mergeLeft(evaluationOptions, evalOpt))
     dbs[this.contractTxId] = this
     this.domain = { name, version, verifyingContract: this.contractTxId }
     const self = this
@@ -410,14 +403,14 @@ class SDK extends Base {
             try {
               const lastStoredKey = (
                 await self.warp.stateEvaluator.latestAvailableState(
-                  self.contractTxId
+                  self.contractTxId,
                 )
               )?.sortKey
               let data =
                 lastStoredKey?.localeCompare(input.lastSortKey) === 0
                   ? await dbs[self.contractTxId].db.readStateFor(
                       input.lastSortKey,
-                      [input.interaction]
+                      [input.interaction],
                     )
                   : await dbs[self.contractTxId].db.readState()
 
@@ -444,7 +437,7 @@ class SDK extends Base {
         }
 
         this.warp.use(
-          new CustomSubscriptionPlugin(this.contractTxId, this.warp)
+          new CustomSubscriptionPlugin(this.contractTxId, this.warp),
         )
       }
       if (is(Function, this.progress)) {
@@ -527,7 +520,7 @@ class SDK extends Base {
         viewContractState: async (contract, param, SmartWeave) => {
           const key = invertObj(
             (cachedStates[this.contractTxId] || states[this.contractTxId])
-              .contracts
+              .contracts,
           )[contract]
           const { handle } = require(`weavedb-contracts/${key}/contract`)
           try {
@@ -555,11 +548,13 @@ class SDK extends Base {
   async read(params, nocache = this.nocache_default) {
     if (!nocache && !isNil(this.state)) {
       try {
+        const sw = this.getSW()
+        const handle = await this.getHandle(this.state.version, sw)
         return (
-          await this.handle(
+          await handle(
             cachedStates[this.contractTxId] || states[this.contractTxId],
             { input: params },
-            this.getSW()
+            sw,
           )
         ).result
       } catch (e) {
@@ -581,7 +576,9 @@ class SDK extends Base {
     let start = Date.now()
     let originalTxId = null
     try {
-      tx = await this.db["bundleInteraction"](param, {})
+      tx = await this.db[
+        this.network === "localhost" ? "writeInteraction" : "bundleInteraction"
+      ](param, {})
     } catch (e) {
       err = e
       console.log(e)
@@ -595,10 +592,10 @@ class SDK extends Base {
     bundle,
     relay = false,
     onDryWrite,
-    parallel
+    parallel,
   ) {
     delete param.data
-    if (JSON.stringify(param).length > 2500) {
+    if (JSON.stringify(param).length > 15000) {
       return {
         nonce: param.nonce,
         signer: param.caller,
@@ -662,14 +659,16 @@ class SDK extends Base {
             let err = null
             let success = true
             try {
-              cacheState = await this.handle(
+              const sw = this.getSW()
+              const handle = await this.getHandle(this.state.version, sw)
+              cacheState = await handle(
                 clone(
-                  cachedStates[this.contractTxId] || states[this.contractTxId]
+                  cachedStates[this.contractTxId] || states[this.contractTxId],
                 ),
                 {
                   input: param,
                 },
-                this.getSW()
+                sw,
               )
             } catch (e) {
               err = e
@@ -687,10 +686,10 @@ class SDK extends Base {
                 typeof err === "string"
                   ? err
                   : typeof err?.message === "string"
-                  ? err.message
-                  : !isNil(err)
-                  ? "unknown error"
-                  : null,
+                    ? err.message
+                    : !isNil(err)
+                      ? "unknown error"
+                      : null,
               function: param.function,
               state: cacheState?.state || null,
               result: cacheState?.result || null,
@@ -702,9 +701,9 @@ class SDK extends Base {
                       res(
                         await self.checkResult(
                           cacheState.result.transaction.id,
-                          self
-                        )
-                      )
+                          self,
+                        ),
+                      ),
                     ),
             }
             sent = true
@@ -720,7 +719,7 @@ class SDK extends Base {
               if (!isNil(onDryWrite?.read)) {
                 cacheResult.results = await this.dryRead(
                   cacheResult.state,
-                  onDryWrite.read
+                  onDryWrite.read,
                 )
               }
             }
@@ -763,7 +762,7 @@ class SDK extends Base {
           if (dryResult.success) {
             dryResult.results = await this.dryRead(
               dryResult.state,
-              onDryWrite.read
+              onDryWrite.read,
             )
             if (dryResult.success) {
               clearTimeout(timeouts[this.contractTxId])
@@ -809,7 +808,7 @@ class SDK extends Base {
           param,
           this.network === "mainnet",
           Date.now(),
-          []
+          [],
         )
         let i = 0
         for (let v of queue) {
@@ -860,13 +859,15 @@ class SDK extends Base {
     for (const v of queries || []) {
       let res = { success: false, err: null, result: null }
       try {
+        const sw = this.getSW()
+        const handle = await this.getHandle(state.version, sw)
         res.result = (
-          await this.handle(
+          await handle(
             clone(state),
             {
               input: { function: v[0], query: tail(v) },
             },
-            this.getSW()
+            sw,
           )
         ).result
         res.success = true
@@ -951,13 +952,18 @@ class SDK extends Base {
     if (includes(func, ["add", "update", "upsert", "set"])) {
       try {
         if (func === "add") {
+          const sw = this.getSW()
+          const handle = await this.getHandle(
+            state.cachedValue.state.version,
+            sw,
+          )
           res.docID = (
-            await this.handle(
+            await handle(
               state.cachedValue.state,
               {
                 input: { function: "ids", tx: tx.originalTxId },
               },
-              this.getSW()
+              sw,
             )
           ).result[0]
           res.path = o(append(res.docID), tail)(query)
@@ -965,13 +971,15 @@ class SDK extends Base {
           res.path = tail(query)
           res.docID = last(res.path)
         }
+        const sw = this.getSW()
+        const handle = await this.getHandle(state.cachedValue.state.version, sw)
         res.doc = (
-          await this.handle(
+          await handle(
             clone(state.cachedValue.state),
             {
               input: { function: "get", query: res.path },
             },
-            this.getSW()
+            sw,
           )
         ).result
       } catch (e) {
@@ -993,6 +1001,8 @@ class SDK extends Base {
           interaction: { id: res.originalTxId },
         })
       }, 0)
+      const sw = this.getSW()
+      const handle = await this.getHandle(state.cachedValue.state.version, sw)
       await _on(
         state,
         {
@@ -1005,7 +1015,7 @@ class SDK extends Base {
             },
           },
         },
-        this.handle
+        handle,
       )
     }
     return res
@@ -1048,26 +1058,32 @@ class SDK extends Base {
 
   async getCache(...query) {
     if (isNil(states[this.contractTxId])) return null
+    const state = states[this.contractTxId]
+    const sw = this.getSW()
+    const handle = await this.getHandle(state.version, sw)
     return (
-      await this.handle(
+      await handle(
         clone(states[this.contractTxId]),
         {
           input: { function: "get", query },
         },
-        this.getSW()
+        sw,
       )
     ).result
   }
 
   async cgetCache(...query) {
     if (isNil(states[this.contractTxId])) return null
+    const state = states[this.contractTxId]
+    const sw = this.getSW()
+    const handle = await this.getHandle(state.version, sw)
     return (
-      await this.handle(
+      await handle(
         clone(states[this.contractTxId]),
         {
           input: { function: "cget", query },
         },
-        this.getSW()
+        sw,
       )
     ).result
   }
@@ -1087,14 +1103,16 @@ class SDK extends Base {
     for (let v of keys) {
       let _query = null
       if (v.func === "add") {
+        const sw = this.getSW()
+        const handle = await this.getHandle(state.version, sw)
         const docID = (
-          await this.handle(
+          await handle(
             clone(state),
             {
               function: "ids",
               input: { tx: input.interaction.id },
             },
-            this.getSW()
+            sw,
           )
         ).result[0]
         _query = append(docID, v.path)
@@ -1102,13 +1120,15 @@ class SDK extends Base {
         _query = v.path
       }
       if (!isNil(_query)) {
+        const sw = this.getSW()
+        const handle = await this.getHandle(state.version, sw)
         let val = (
-          await this.handle(
+          await handle(
             clone(state),
             {
               input: { function: "cget", query: _query },
             },
-            this.getSW()
+            sw,
           )
         ).result
         if (!isNil(val)) delete val.block
@@ -1116,7 +1136,7 @@ class SDK extends Base {
           this.contractTxId,
           "cget",
           _query,
-          this.cache_prefix
+          this.cache_prefix,
         )
         updates[key] = val
       }
@@ -1126,7 +1146,7 @@ class SDK extends Base {
           this.contractTxId,
           "cget",
           _query,
-          this.cache_prefix
+          this.cache_prefix,
         )
         updates[key] = null
       }
@@ -1146,7 +1166,7 @@ class SDK extends Base {
         updates,
         deletes: uniq(deletes),
       },
-      input
+      input,
     )
   }
 
@@ -1158,7 +1178,7 @@ class SDK extends Base {
             function: "nonce",
             address,
           },
-          nocache
+          nocache,
         )) + 1
   }
 }
